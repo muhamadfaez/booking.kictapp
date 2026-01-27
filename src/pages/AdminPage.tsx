@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { api } from '@/lib/api-client';
-import type { Booking, Venue } from '@shared/types';
+import type { Booking } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 export default function AdminPage() {
@@ -12,17 +12,6 @@ export default function AdminPage() {
     queryKey: ['all-bookings'],
     queryFn: () => api<Booking[]>('/api/bookings')
   });
-
-  useEffect(() => {
-    api('/api/init').catch(console.error);
-  }, []);
-
-  const { data: venues = [] } = useQuery({
-    queryKey: ['venues'],
-    queryFn: () => api<Venue[]>('/api/venues')
-  });
-
-  const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
   const pendingBookings = bookings?.filter(b => b.status === 'PENDING') ?? [];
   const historicalBookings = bookings?.filter(b => b.status !== 'PENDING') ?? [];
   return (
@@ -32,20 +21,22 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold tracking-tight">Command Center</h1>
           <p className="text-muted-foreground">Manage facility requests and monitor institutional workspace usage.</p>
         </header>
-        <AdminStats bookings={bookings ?? []} venues={venues} />
+        <AdminStats bookings={bookings ?? []} />
         <div className="space-y-4">
           <Tabs defaultValue="pending" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="pending">
-                Pending Requests
-                {pendingBookings.length > 0 && (
-                  <span className="ml-2 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs font-bold">
-                    {pendingBookings.length}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="history">Resolution History</TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between mb-4">
+              <TabsList>
+                <TabsTrigger value="pending">
+                  Pending Requests
+                  {pendingBookings.length > 0 && (
+                    <span className="ml-2 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs font-bold">
+                      {pendingBookings.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="history">Resolution History</TabsTrigger>
+              </TabsList>
+            </div>
             <TabsContent value="pending" className="mt-0">
               <Card>
                 <CardHeader className="px-6 py-4">
@@ -53,11 +44,10 @@ export default function AdminPage() {
                   <CardDescription>Review and manage incoming booking requests.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <BookingRequestTable
-                    bookings={pendingBookings}
-                    isLoading={isLoading}
-                    onActionSuccess={refetch}
-                    venueMap={venueMap}
+                  <BookingRequestTable 
+                    bookings={pendingBookings} 
+                    isLoading={isLoading} 
+                    onActionSuccess={refetch} 
                   />
                 </CardContent>
               </Card>
@@ -69,11 +59,10 @@ export default function AdminPage() {
                   <CardDescription>Overview of processed requests.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <BookingRequestTable
-                    bookings={historicalBookings}
-                    isLoading={isLoading}
-                    onActionSuccess={refetch}
-                    venueMap={venueMap}
+                  <BookingRequestTable 
+                    bookings={historicalBookings} 
+                    isLoading={isLoading} 
+                    onActionSuccess={refetch} 
                   />
                 </CardContent>
               </Card>

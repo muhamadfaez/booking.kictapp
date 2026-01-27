@@ -5,8 +5,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   createBrowserRouter,
-  RouterProvider,
-  Navigate
+  RouterProvider
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -14,14 +13,10 @@ import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import '@/index.css'
 import LandingPage from '@/pages/LandingPage'
 import DashboardPage from '@/pages/DashboardPage'
-import { AuthProvider, useAuth } from '@/lib/mock-auth'
+import AdminPage from '@/pages/AdminPage'
+import { AuthProvider } from '@/lib/mock-auth'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 const queryClient = new QueryClient();
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
-  if (isLoading) return null;
-  if (!user) return <Navigate to="/" replace />;
-  return <>{children}</>;
-}
 const router = createBrowserRouter([
   {
     path: "/",
@@ -31,8 +26,17 @@ const router = createBrowserRouter([
   {
     path: "/dashboard",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute role="USER">
         <DashboardPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin",
+    element: (
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminPage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,

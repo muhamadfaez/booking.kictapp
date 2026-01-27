@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/lib/mock-auth';
 import type { UserRole } from '@shared/types';
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -18,8 +18,10 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   if (!user) {
     return <Navigate to="/" replace />;
   }
-  if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
-    // Block non-admin users from admin pages. Admins can access both admin and user pages.
+  if (requiredRole && user.role !== requiredRole) {
+    // If an admin tries to access a user page or vice versa incorrectly, 
+    // but usually admins can see user pages, so we specifically check if role is sufficient.
+    // For this app: ADMIN can access ADMIN, USER can access USER.
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;

@@ -1,72 +1,109 @@
-/* This is a demo sidebar. **COMPULSORY** Edit this file to customize the sidebar OR remove it from appLayout OR don't use appLayout at all */
 import React from "react";
-import { Home, Layers, Compass, Star, Settings, LifeBuoy } from "lucide-react";
+import { 
+  LayoutDashboard, 
+  Building2, 
+  ClipboardList, 
+  ShieldCheck, 
+  Settings, 
+  History,
+  LogOut,
+  User as UserIcon
+} from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/lib/mock-auth";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarHeader,
-  SidebarSeparator,
-  SidebarInput,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarMenuAction,
-  SidebarMenuBadge,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
-
 export function AppSidebar(): JSX.Element {
+  const { user, logout } = useAuth();
+  const location = useLocation();
+  const isAdmin = user?.role === 'ADMIN';
+  const navItems = isAdmin ? [
+    { title: "Admin Console", icon: ShieldCheck, href: "/admin" },
+    { title: "Venue Management", icon: Building2, href: "/admin/venues" },
+    { title: "Global History", icon: History, href: "/admin/history" },
+  ] : [
+    { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+    { title: "Venue Explorer", icon: Building2, href: "/dashboard" },
+    { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
+  ];
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <div className="h-6 w-6 rounded-md bg-gradient-to-br from-indigo-500 to-purple-500" />
-          <span className="text-sm font-medium">Demo Sidebar</span>
+        <div className="flex items-center gap-3 px-2 py-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md">
+            <span className="text-sm font-bold text-white">NR</span>
+          </div>
+          <div className="flex flex-col truncate group-data-[collapsible=icon]:hidden">
+            <span className="text-sm font-semibold leading-none">Nexus Reserve</span>
+            <span className="text-xs text-muted-foreground mt-1">Enterprise Booking</span>
+          </div>
         </div>
-        <SidebarInput placeholder="Search" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive>
-                <a href="#"><Home /> <span>Home</span></a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <a href="#"><Layers /> <span>Projects</span></a>
-              </SidebarMenuButton>
-              <SidebarMenuAction>
-                <Star className="size-4" />
-              </SidebarMenuAction>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <a href="#"><Compass /> <span>Explore</span></a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {navItems.map((item) => (
+              <SidebarMenuItem key={item.href}>
+                <SidebarMenuButton 
+                  asChild 
+                  isActive={location.pathname === item.href}
+                  tooltip={item.title}
+                >
+                  <Link to={item.href}>
+                    <item.icon className="size-4" />
+                    <span>{item.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarGroup>
-
         <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Quick Links</SidebarGroupLabel>
+        <SidebarGroup className="mt-auto">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <a href="#"><Star /> <span>Starred</span></a>
+              <SidebarMenuButton tooltip="Settings">
+                <Settings className="size-4" />
+                <span>Settings</span>
               </SidebarMenuButton>
-              <SidebarMenuBadge>5</SidebarMenuBadge>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="px-2 text-xs text-muted-foreground">A simple shadcn sidebar</div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <div className="flex items-center gap-3 px-2 py-4 group-data-[collapsible=icon]:justify-center">
+              <div className="h-8 w-8 shrink-0 rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="h-full w-full object-cover" />
+                ) : (
+                  <UserIcon className="size-4 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex flex-col truncate group-data-[collapsible=icon]:hidden">
+                <span className="text-xs font-medium truncate">{user?.name}</span>
+                <span className="text-[10px] text-muted-foreground truncate">{user?.role}</span>
+              </div>
+              <button 
+                onClick={logout}
+                className="ml-auto group-data-[collapsible=icon]:hidden text-muted-foreground hover:text-destructive transition-colors"
+                aria-label="Logout"
+              >
+                <LogOut className="size-4" />
+              </button>
+            </div>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );

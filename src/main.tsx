@@ -10,6 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
+import MyBookingsPage from '@/pages/MyBookingsPage';
 import '@/index.css'
 import LandingPage from '@/pages/LandingPage'
 import DashboardPage from '@/pages/DashboardPage'
@@ -29,6 +30,10 @@ const router = createBrowserRouter([
       <ProtectedRoute requiredRole="USER">
         <DashboardPage />
       </ProtectedRoute>
+    ),
+    {
+      path: "/bookings",
+      element: (
     ),
     errorElement: <RouteErrorBoundary />,
   },

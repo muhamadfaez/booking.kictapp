@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import type { Venue, SessionSlot } from "@shared/types";
 import { api } from "@/lib/api-client";
-import { useAuth } from "@/lib/mock-auth";
+import { useAuth } from '@/hooks/useAuth';
 interface BookingWizardProps {
   venue: Venue | null;
   isOpen: boolean;

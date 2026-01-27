@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/lib/mock-auth';
+import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@shared/types';
 interface ProtectedRouteProps {
   children: React.ReactNode;

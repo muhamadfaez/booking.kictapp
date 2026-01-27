@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Calendar, Zap, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/lib/mock-auth';
+import { useAuth } from '@/hooks/useAuth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 export default function LandingPage() {
   const { login } = useAuth();

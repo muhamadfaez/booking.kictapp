@@ -1,7 +1,7 @@
 import React from 'react';
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { useAuth } from "@/lib/mock-auth";
+import { useAuth } from '@/hooks/useAuth';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +23,7 @@ export function DashboardHeader() {
         <nav className="flex items-center space-x-2 text-sm font-medium">
           <span className="text-muted-foreground">Nexus</span>
           <span className="text-muted-foreground">/</span>
-          <span className="text-foreground capitalize">{window.location.pathname.split('/').pop() || 'Dashboard'}</span>
+          <span className="text-foreground capitalize">{typeof window !== 'undefined' ? window.location.pathname.split('/').pop() || 'Dashboard' : 'Dashboard'}</span>
         </nav>
       </div>
       <div className="flex items-center gap-4">
@@ -35,7 +35,7 @@ export function DashboardHeader() {
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar className="h-8 w-8 border">
                 <AvatarImage src={user?.avatar} alt={user?.name} />
-                <AvatarFallback>{user?.name?.charAt(0)}</AvatarFallback>
+                <AvatarFallback>{user?.name?.[0] || ''}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>

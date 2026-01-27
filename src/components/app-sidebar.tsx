@@ -10,7 +10,7 @@ import {
   User as UserIcon
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "@/lib/mock-auth";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
   SidebarContent,

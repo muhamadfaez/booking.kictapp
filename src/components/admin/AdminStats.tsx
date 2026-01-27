@@ -1,14 +1,19 @@
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Timer, CheckCircle2, Building, PieChart } from "lucide-react";
-import type { Booking } from "@shared/types";
+import type { Booking, Venue } from "@shared/types";
 interface AdminStatsProps {
   bookings: Booking[];
+  venues?: Venue[];
 }
-export function AdminStats({ bookings }: AdminStatsProps) {
+export function AdminStats({ bookings, venues }: AdminStatsProps) {
   const pending = bookings.filter(b => b.status === 'PENDING').length;
-  const approved = bookings.filter(b => b.status === 'APPROVED').length;
-  const total = bookings.length;
+  const approvedToday = bookings.filter(b => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return b.status === 'APPROVED' && new Date(b.createdAt) >= today;
+  }).length;
+  const totalVenues = venues?.length ?? 0;
   const stats = [
     {
       label: "Pending Approvals",
@@ -19,21 +24,21 @@ export function AdminStats({ bookings }: AdminStatsProps) {
     },
     {
       label: "Approved Today",
-      value: approved,
+      value: approvedToday,
       icon: CheckCircle2,
       color: "text-green-600",
       bg: "bg-green-600/10"
     },
     {
       label: "Capacity Usage",
-      value: total > 0 ? `${Math.round((approved / total) * 100)}%` : "0%",
+      value: bookings.length > 0 ? `${Math.round((approvedToday / bookings.length) * 100)}%` : "0%",
       icon: PieChart,
       color: "text-teal-600",
       bg: "bg-teal-600/10"
     },
     {
       label: "Total Venues",
-      value: "3", // Hardware for now based on mock data
+      value: totalVenues.toString(),
       icon: Building,
       color: "text-blue-600",
       bg: "bg-blue-600/10"

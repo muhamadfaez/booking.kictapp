@@ -51,10 +51,10 @@ export function AppSidebar(): JSX.Element {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            {navItems.map((item) => (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton 
-                  asChild 
+            {navItems.map((item, index) => (
+              <SidebarMenuItem key={`nav-${index}`}>
+                <SidebarMenuButton
+                  asChild
                   isActive={location.pathname === item.href}
                   tooltip={item.title}
                 >

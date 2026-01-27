@@ -19,8 +19,9 @@ interface BookingRequestTableProps {
   bookings: Booking[];
   isLoading: boolean;
   onActionSuccess: () => void;
+  venueMap?: Record<string, string>;
 }
-export function BookingRequestTable({ bookings, isLoading, onActionSuccess }: BookingRequestTableProps) {
+export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venueMap }: BookingRequestTableProps) {
   const [processingId, setProcessingId] = React.useState<string | null>(null);
   const handleStatusUpdate = async (id: string, status: 'APPROVED' | 'REJECTED') => {
     setProcessingId(id);
@@ -84,7 +85,7 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess }: Bo
                 <div className="space-y-1">
                   <div className="flex items-center gap-1 text-sm">
                     <Building className="h-3 w-3 text-muted-foreground" />
-                    <span>{booking.venueId}</span>
+                    <span>{venueMap?.[booking.venueId] ?? booking.venueId}</span>
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Calendar className="h-3 w-3" />

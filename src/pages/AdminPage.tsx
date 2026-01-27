@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { api } from '@/lib/api-client';
-import type { Booking } from '@shared/types';
+import type { Booking, Venue } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 export default function AdminPage() {
@@ -12,6 +12,17 @@ export default function AdminPage() {
     queryKey: ['all-bookings'],
     queryFn: () => api<Booking[]>('/api/bookings')
   });
+
+  useEffect(() => {
+    api('/api/init').catch(console.error);
+  }, []);
+
+  const { data: venues = [] } = useQuery({
+    queryKey: ['venues'],
+    queryFn: () => api<Venue[]>('/api/venues')
+  });
+
+  const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
   const pendingBookings = bookings?.filter(b => b.status === 'PENDING') ?? [];
   const historicalBookings = bookings?.filter(b => b.status !== 'PENDING') ?? [];
   return (
@@ -21,7 +32,7 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold tracking-tight">Command Center</h1>
           <p className="text-muted-foreground">Manage facility requests and monitor institutional workspace usage.</p>
         </header>
-        <AdminStats bookings={bookings ?? []} />
+        <AdminStats bookings={bookings ?? []} venues={venues} />
         <div className="space-y-4">
           <Tabs defaultValue="pending" className="w-full">
             <div className="flex items-center justify-between mb-4">
@@ -44,10 +55,11 @@ export default function AdminPage() {
                   <CardDescription>Review and manage incoming booking requests.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <BookingRequestTable 
-                    bookings={pendingBookings} 
-                    isLoading={isLoading} 
-                    onActionSuccess={refetch} 
+                  <BookingRequestTable
+                    bookings={pendingBookings}
+                    isLoading={isLoading}
+                    onActionSuccess={refetch}
+                    venueMap={venueMap}
                   />
                 </CardContent>
               </Card>
@@ -59,10 +71,11 @@ export default function AdminPage() {
                   <CardDescription>Overview of processed requests.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <BookingRequestTable 
-                    bookings={historicalBookings} 
-                    isLoading={isLoading} 
-                    onActionSuccess={refetch} 
+                  <BookingRequestTable
+                    bookings={historicalBookings}
+                    isLoading={isLoading}
+                    onActionSuccess={refetch}
+                    venueMap={venueMap}
                   />
                 </CardContent>
               </Card>

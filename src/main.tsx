@@ -31,9 +31,14 @@ const router = createBrowserRouter([
         <DashboardPage />
       </ProtectedRoute>
     ),
-    {
-      path: "/bookings",
-      element: (
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/bookings",
+    element: (
+      <ProtectedRoute requiredRole="USER">
+        <MyBookingsPage />
+      </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,
   },

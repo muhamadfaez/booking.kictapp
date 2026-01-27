@@ -26,7 +26,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard",
     element: (
-      <ProtectedRoute role="USER">
+      <ProtectedRoute requiredRole="USER">
         <DashboardPage />
       </ProtectedRoute>
     ),

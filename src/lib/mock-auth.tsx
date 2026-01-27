@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, UserRole } from '@shared/types';
 import { MOCK_USERS } from '@shared/mock-data';
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   login: (role: UserRole) => void;
   logout: () => void;
@@ -33,10 +33,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}
+export { AuthContext };

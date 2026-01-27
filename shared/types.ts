@@ -3,22 +3,44 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: string;
 }
-
-// Minimal real-world chat example types (shared by frontend and worker)
+export type UserRole = 'USER' | 'ADMIN';
+export type BookingStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type SessionSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY';
 export interface User {
   id: string;
   name: string;
+  email: string;
+  role: UserRole;
+  avatar?: string;
 }
-
+export interface Venue {
+  id: string;
+  name: string;
+  description: string;
+  capacity: number;
+  imageUrl: string;
+  amenities: string[];
+  location: string;
+}
+export interface Booking {
+  id: string;
+  venueId: string;
+  userId: string;
+  userName: string;
+  date: string; // YYYY-MM-DD
+  session: SessionSlot;
+  status: BookingStatus;
+  createdAt: number;
+  purpose: string;
+}
 export interface Chat {
   id: string;
   title: string;
 }
-
 export interface ChatMessage {
   id: string;
   chatId: string;
   userId: string;
   text: string;
-  ts: number; // epoch millis
+  ts: number;
 }

@@ -4,7 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { VenueCard } from '@/components/booking/VenueCard';
 import { BookingWizard } from '@/components/booking/BookingWizard';
 import { api } from '@/lib/api-client';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/lib/mock-auth';
 import type { Venue, Booking } from '@shared/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

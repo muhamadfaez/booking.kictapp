@@ -77,7 +77,9 @@ function updateWranglerJsonc() {
 }
 
 function runSetupCommands() {
-    const commands = [];
+    const commands = [
+    "bun add axios@^1.7.2"
+];
     
     if (commands.length === 0) {
         console.log('⊘ No setup commands to run');

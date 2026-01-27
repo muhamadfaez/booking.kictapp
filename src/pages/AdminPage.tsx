@@ -35,19 +35,17 @@ export default function AdminPage() {
         <AdminStats bookings={bookings ?? []} venues={venues} />
         <div className="space-y-4">
           <Tabs defaultValue="pending" className="w-full">
-            <div className="flex items-center justify-between mb-4">
-              <TabsList>
-                <TabsTrigger value="pending">
-                  Pending Requests
-                  {pendingBookings.length > 0 && (
-                    <span className="ml-2 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs font-bold">
-                      {pendingBookings.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="history">Resolution History</TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList className="mb-4">
+              <TabsTrigger value="pending">
+                Pending Requests
+                {pendingBookings.length > 0 && (
+                  <span className="ml-2 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs font-bold">
+                    {pendingBookings.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="history">Resolution History</TabsTrigger>
+            </TabsList>
             <TabsContent value="pending" className="mt-0">
               <Card>
                 <CardHeader className="px-6 py-4">

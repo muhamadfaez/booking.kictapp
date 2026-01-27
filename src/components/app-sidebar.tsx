@@ -34,7 +34,6 @@ export function AppSidebar(): JSX.Element {
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { title: "Venue Explorer", icon: Building2, href: "/dashboard" },
     { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
-    { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
   ];
   return (
     <Sidebar collapsible="icon">

@@ -4,7 +4,7 @@
  */
  {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "nexus-reserve-deq6pjcovclezl7api7ye",
+	"name": "booking-system",
 	"main": "worker/index.ts",
 	"compatibility_date": "2025-04-24",
 	"assets": {

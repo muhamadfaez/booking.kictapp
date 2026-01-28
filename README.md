@@ -1,6 +1,6 @@
 # Cloudflare Workers Full-Stack React Template
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/muhamadfaez/booking-system)
 
 A production-ready full-stack template for Cloudflare Workers featuring a React frontend with Vite, Tailwind CSS, shadcn/ui, and a Hono backend powered by Durable Objects for scalable state management. Demonstrates real-time chat boards with users and messages, using indexed entity listing and transactional storage.
 
@@ -114,7 +114,7 @@ bun run build
 bunx wrangler@latest deploy
 ```
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/muhamadfaez/booking-system)
 
 ### Custom Domain & Config
 

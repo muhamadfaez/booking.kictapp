@@ -69,7 +69,7 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 overflow-hidden relative">
-      <ThemeToggle />
+      <ThemeToggle className="absolute top-4 right-4" />
       <div className="absolute inset-0 bg-gradient-rainbow opacity-10 dark:opacity-20 pointer-events-none" />
 
       <div className="text-center space-y-8 relative z-10 animate-fade-in w-full">

@@ -7,7 +7,7 @@ interface ThemeToggleProps {
   className?: string;
 }
 
-export function ThemeToggle({ className = "absolute top-4 right-4" }: ThemeToggleProps) {
+export function ThemeToggle({ className = "" }: ThemeToggleProps) {
   const { isDark, toggleTheme } = useTheme();
 
   return (

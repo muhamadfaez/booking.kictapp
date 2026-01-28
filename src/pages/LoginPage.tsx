@@ -1,18 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Mail, ArrowLeft, Loader2, CheckCircle2, X } from 'lucide-react';
+import { Building2, Mail, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
+import { useGoogleLogin } from '@react-oauth/google';
+import { toast } from 'sonner';
+import axios from 'axios';
 
 // Simulated verification codes storage (in production, this would be server-side)
 const pendingVerifications: Map<string, string> = new Map();
@@ -33,60 +29,40 @@ export default function LoginPage() {
     const [sentCode, setSentCode] = useState('');
     const [showCodeSentMessage, setShowCodeSentMessage] = useState(false);
 
-    // Google Sign In Modal State
-    const [showGoogleModal, setShowGoogleModal] = useState(false);
-    const [googleEmail, setGoogleEmail] = useState('');
-    const [googleLoading, setGoogleLoading] = useState(false);
-    const [googleError, setGoogleError] = useState('');
+    // Real Google OAuth Sign In
+    const handleGoogleSignIn = useGoogleLogin({
+        onSuccess: async (tokenResponse) => {
+            try {
+                // Get user info from Google
+                const userInfo = await axios.get(
+                    'https://www.googleapis.com/oauth2/v3/userinfo',
+                    {
+                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                    }
+                );
 
-    const handleGoogleSignIn = () => {
-        setShowGoogleModal(true);
-        setGoogleEmail('');
-        setGoogleError('');
-    };
+                const { email, name, picture } = userInfo.data;
 
-    const handleGoogleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+                // Login with real Google data
+                const user = loginWithGoogle(email, name, picture);
 
-        if (!googleEmail.trim()) {
-            setGoogleError('Please enter your email address');
-            return;
+                toast.success(`Welcome, ${name}!`);
+
+                // Redirect based on role
+                if (user.role === 'ADMIN') {
+                    navigate('/admin');
+                } else {
+                    navigate('/dashboard');
+                }
+            } catch (error) {
+                console.error('Google Sign-In Error:', error);
+                toast.error('Failed to sign in with Google. Please try again.');
+            }
+        },
+        onError: () => {
+            toast.error('Google Sign-In was cancelled or failed');
         }
-
-        if (!googleEmail.includes('@')) {
-            setGoogleError('Please enter a valid email address');
-            return;
-        }
-
-        setGoogleLoading(true);
-        setGoogleError('');
-
-        // Simulate Google OAuth verification
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Extract name from email
-        const name = googleEmail.split('@')[0]
-            .split('.')
-            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(' ');
-
-        // Login with the Google credentials
-        const user = loginWithGoogle(
-            googleEmail,
-            name,
-            `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(googleEmail)}`
-        );
-
-        setShowGoogleModal(false);
-        setGoogleLoading(false);
-
-        // Redirect based on role
-        if (user.role === 'ADMIN') {
-            navigate('/admin');
-        } else {
-            navigate('/dashboard');
-        }
-    };
+    });
 
     const handleEmailSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -249,9 +225,9 @@ export default function LoginPage() {
                         {/* Google Sign In */}
                         <div className="space-y-4">
                             <Button
-                                onClick={handleGoogleSignIn}
+                                onClick={() => handleGoogleSignIn()}
                                 disabled={isLoading}
-                                className="w-full h-12 text-base font-medium bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 shadow-sm rounded-xl transition-all duration-300 hover:shadow-md"
+                                className="w-full h-12 text-base font-medium bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 shadow-sm rounded-xl transition-all duration-300 hover:shadow-md dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
                             >
                                 <svg className="mr-3 h-5 w-5" viewBox="0 0 24 24">
                                     <path
@@ -419,88 +395,6 @@ export default function LoginPage() {
                     </p>
                 </div>
             </main>
-
-            {/* Google Sign In Modal */}
-            <Dialog open={showGoogleModal} onOpenChange={setShowGoogleModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-3">
-                            <svg className="h-6 w-6" viewBox="0 0 24 24">
-                                <path
-                                    fill="#4285F4"
-                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                                />
-                                <path
-                                    fill="#34A853"
-                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                                />
-                                <path
-                                    fill="#FBBC05"
-                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                                />
-                                <path
-                                    fill="#EA4335"
-                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                                />
-                            </svg>
-                            Sign in with Google
-                        </DialogTitle>
-                        <DialogDescription>
-                            Enter your Google account email to continue
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <form onSubmit={handleGoogleSubmit} className="space-y-4 mt-4">
-                        <div className="space-y-2">
-                            <label htmlFor="google-email" className="text-sm font-medium">
-                                Email Address
-                            </label>
-                            <Input
-                                id="google-email"
-                                type="email"
-                                placeholder="you@gmail.com"
-                                value={googleEmail}
-                                onChange={(e) => setGoogleEmail(e.target.value)}
-                                className="h-11"
-                                autoComplete="email"
-                                autoFocus
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                For admin access, use: <span className="font-mono text-primary">muhamadfaez@iium.edu.my</span>
-                            </p>
-                        </div>
-
-                        {googleError && (
-                            <p className="text-sm text-destructive">{googleError}</p>
-                        )}
-
-                        <div className="flex gap-3">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setShowGoogleModal(false)}
-                                className="flex-1"
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                type="submit"
-                                disabled={googleLoading}
-                                className="flex-1"
-                            >
-                                {googleLoading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Signing in...
-                                    </>
-                                ) : (
-                                    'Continue'
-                                )}
-                            </Button>
-                        </div>
-                    </form>
-                </DialogContent>
-            </Dialog>
         </div>
     );
 }

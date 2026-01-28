@@ -2,6 +2,7 @@ import React from 'react';
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from '@/hooks/useAuth';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,51 +12,98 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, User as UserIcon, Bell } from "lucide-react";
+import { LogOut, User as UserIcon, Bell, Settings, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation } from 'react-router-dom';
+
 export function DashboardHeader() {
   const { user, logout } = useAuth();
+  const location = useLocation();
+
+  const getPageTitle = () => {
+    const path = location.pathname;
+    if (path === '/dashboard') return 'Dashboard';
+    if (path === '/bookings') return 'My Bookings';
+    if (path === '/admin') return 'Admin Console';
+    if (path.includes('/admin/venues')) return 'Venue Management';
+    if (path.includes('/admin/history')) return 'History';
+    return 'Dashboard';
+  };
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b bg-background/60 px-4 backdrop-blur-md">
+    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border/50 bg-background/80 px-4 backdrop-blur-xl">
       <div className="flex items-center gap-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="h-4" />
-        <nav className="flex items-center space-x-2 text-sm font-medium">
-          <span className="text-muted-foreground">Nexus</span>
-          <span className="text-muted-foreground">/</span>
-          <span className="text-foreground capitalize">{typeof window !== 'undefined' ? window.location.pathname.split('/').pop() || 'Dashboard' : 'Dashboard'}</span>
+        <SidebarTrigger className="-ml-1 hover:bg-muted rounded-lg transition-colors" />
+        <Separator orientation="vertical" className="h-5" />
+        <nav className="flex items-center space-x-1.5 text-sm">
+          <span className="text-muted-foreground font-medium">BookingTrack</span>
+          <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
+          <span className="text-foreground font-semibold">{getPageTitle()}</span>
         </nav>
       </div>
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" className="text-muted-foreground">
+
+      <div className="flex items-center gap-2">
+        {/* Theme Toggle */}
+        <ThemeToggle />
+
+        {/* Notifications */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground"
+        >
           <Bell className="h-5 w-5" />
+          {/* Notification dot */}
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
         </Button>
+
+        <Separator orientation="vertical" className="h-5 mx-1" />
+
+        {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-              <Avatar className="h-8 w-8 border">
+            <Button
+              variant="ghost"
+              className="relative h-9 gap-2 rounded-lg px-2 hover:bg-muted"
+            >
+              <Avatar className="h-7 w-7 border border-border">
                 <AvatarImage src={user?.avatar} alt={user?.name} />
-                <AvatarFallback>{user?.name?.[0] || ''}</AvatarFallback>
+                <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-xs font-bold">
+                  {user?.name?.[0]?.toUpperCase() || ''}
+                </AvatarFallback>
               </Avatar>
+              <span className="text-sm font-medium hidden sm:block">{user?.name?.split(' ')[0]}</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{user?.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {user?.email}
-                </p>
+          <DropdownMenuContent className="w-64 p-2" align="end" sideOffset={8}>
+            <DropdownMenuLabel className="font-normal p-3 bg-muted/50 rounded-lg mb-2">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10 border-2 border-background">
+                  <AvatarImage src={user?.avatar} alt={user?.name} />
+                  <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-bold">
+                    {user?.name?.[0]?.toUpperCase() || ''}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <p className="text-sm font-semibold">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <UserIcon className="mr-2 h-4 w-4" />
-              <span>Profile</span>
+            <DropdownMenuItem className="h-10 rounded-lg cursor-pointer">
+              <UserIcon className="mr-3 h-4 w-4 text-muted-foreground" />
+              <span>Profile Settings</span>
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-              <LogOut className="mr-2 h-4 w-4" />
+            <DropdownMenuItem className="h-10 rounded-lg cursor-pointer">
+              <Settings className="mr-3 h-4 w-4 text-muted-foreground" />
+              <span>Preferences</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-2" />
+            <DropdownMenuItem
+              onClick={logout}
+              className="h-10 rounded-lg cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <LogOut className="mr-3 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>

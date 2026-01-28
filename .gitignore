@@ -1,3 +1,24 @@
 
 # Bootstrap marker
 .bootstrap-complete
+
+# Dependencies
+node_modules
+
+# Environment variables
+.env.local
+.env.*.local
+
+# Build outputs
+dist
+.wrangler
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

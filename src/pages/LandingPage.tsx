@@ -87,14 +87,11 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
 
         <div className="relative z-10 container mx-auto px-4 text-center space-y-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-sm font-medium animate-fade-in">
-            <Calendar className="w-4 h-4" />
-            <span>Professional Workspace Booking</span>
-          </div>
 
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight max-w-4xl mx-auto text-white drop-shadow-lg animate-fade-in-up">
             Book Your Perfect{' '}
-            <span className="text-primary-foreground underline decoration-primary decoration-4 underline-offset-8">Workspace</span>
+            <p></p>
+            <span className="text-primary-foreground underline decoration-primary decoration-4 underline-offset-8">VENUE</span>
           </h1>
 
           <p className="text-lg md:text-2xl text-white/90 max-w-2xl mx-auto drop-shadow-md animate-fade-in-up delay-100">

@@ -1,0 +1,406 @@
+# Deep Codebase Analysis: Nexus Reserve (booking.kictapp)
+
+## Project Overview
+
+**Nexus Reserve** is a full-stack enterprise booking system for workspace/venue reservations. It features a React frontend with a Cloudflare Workers backend using Durable Objects for persistent state management.
+
+---
+
+## Architecture Summary
+
+Frontend (React + Vite)
+├── LandingPage.tsx
+├── DashboardPage.tsx
+├── AdminPage.tsx
+└── MyBookingsPage.tsx
+
+State Management
+├── mock-auth.tsx
+└── TanStack Query
+
+Backend (Cloudflare Workers)
+├── Hono API Routes
+├── user-routes.ts
+├── entities.ts
+└── core-utils.ts
+
+Durable Objects
+├── GlobalDurableObject
+├── UserEntity
+├── VenueEntity
+└── BookingEntity
+
+Data Flow:
+Frontend → State → HonoAPI → UserRoutes → Entities → CoreUtils → GlobalDO
+
+---
+
+## Technology Stack
+
+| Layer                  | Technology                              |
+|------------------------|----------------------------------------|
+| Frontend Framework     | React 18.3.1                           |
+| Build Tool             | Vite 6.3.1                             |
+| Routing                | React Router DOM 6.30.0                |
+| State Management       | TanStack Query + React Context         |
+| Styling                | TailwindCSS 3.4.17 + shadcn/ui         |
+| Backend Runtime        | Cloudflare Workers                     |
+| API Framework          | Hono 4.9.8                             |
+| Data Persistence       | Cloudflare Durable Objects             |
+| Type System            | TypeScript 5.8                         |
+| Package Manager        | Bun                                    |
+
+---
+
+## Directory Structure
+
+booking.kictapp/
+├── src/                    # Frontend source
+│   ├── components/         # React components (59 files)
+│   │   ├── admin/          # Admin-specific components
+│   │   ├── auth/           # Authentication components
+│   │   ├── booking/        # Booking flow components
+│   │   ├── layout/         # Layout components
+│   │   └── ui/             # shadcn/ui components (46 files)
+│   ├── hooks/              # Custom React hooks
+│   ├── lib/                # Utilities and clients
+│   ├── pages/              # Page components
+│   └── main.tsx            # Application entry point
+├── worker/                 # Backend source
+│   ├── index.ts            # Worker entry point
+│   ├── user-routes.ts      # API route definitions
+│   ├── entities.ts         # Entity class definitions
+│   └── core-utils.ts       # Core utilities & DO base classes
+├── shared/                 # Shared between frontend/backend
+│   ├── types.ts            # TypeScript interfaces
+│   └── mock-data.ts        # Seed data
+└── Configuration files     # Various config files
+
+---
+
+## Core Data Types
+
+### types.ts
+
+// User Role System
+type UserRole = 'USER' | 'ADMIN';
+
+// Booking Status Workflow
+type BookingStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+// Time Slot System
+type SessionSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY';
+
+// Core Entities
+interface User { id, name, email, role, avatar? }
+interface Venue { id, name, description, capacity, imageUrl, amenities, location }
+interface Booking { id, venueId, userId, userName, date, session, status, createdAt, purpose }
+
+---
+
+## Backend Analysis
+
+### Worker Entry Point (index.ts)
+
+The main worker file uses Hono as the API framework:
+
+| Feature          | Implementation                                      |
+|------------------|-----------------------------------------------------|
+| CORS             | Enabled for all origins with GET/POST/PUT/DELETE    |
+| Logging          | Hono logger middleware                              |
+| Health Check     | GET /api/health                                     |
+| Error Reporting  | POST /api/client-errors                             |
+| User Routes      | Dynamically loaded from user-routes.ts              |
+
+NOTE: User routes are lazily loaded with retry mechanism (750ms retry interval) to handle module loading failures gracefully.
+
+### Entity System (core-utils.ts)
+
+The backend uses a sophisticated Entity pattern built on Durable Objects:
+
+GlobalDurableObject Class:
+- del(key): boolean
+- has(key): boolean
+- getDoc(key): Doc<T>
+- casPut(key, version, data): {ok, v}
+- listPrefix(prefix): {keys, next}
+- indexAddBatch(items): void
+- indexRemoveBatch(items): number
+
+Entity<State> Class:
+- _state: State
+- _version: number
+- id: string
+- state: State
+- save(next): void
+- mutate(updater): State
+- patch(partial): void
+- exists(): boolean
+- delete(): boolean
+
+IndexedEntity<S> Class (extends Entity):
+- create(env, state): S
+- list(env, cursor?, limit?): {items, next}
+- ensureSeed(env): void
+- delete(env, id): boolean
+
+Key Features:
+- CAS (Compare-And-Swap): Ensures atomic updates with version checking
+- Automatic Indexing: Entities are auto-indexed for efficient listing
+- Seed Data: Entities support automatic seeding on first access
+- Conflict Resolution: 4-retry loop for concurrent modification handling
+
+### Entities (entities.ts)
+
+| Entity         | Index Name | Seed Data      |
+|----------------|------------|----------------|
+| UserEntity     | users      | MOCK_USERS     |
+| VenueEntity    | venues     | MOCK_VENUES    |
+| BookingEntity  | bookings   | MOCK_BOOKINGS  |
+
+BookingEntity Special Method:
+static async checkAvailability(env, venueId, date, session): Promise<boolean>
+// Returns true if no APPROVED/PENDING booking exists for the slot
+
+### API Routes (user-routes.ts)
+
+| Endpoint               | Method | Description                          |
+|------------------------|--------|--------------------------------------|
+| /api/init              | GET    | Seeds initial data                   |
+| /api/venues            | GET    | Lists all venues                     |
+| /api/bookings          | GET    | Lists bookings (optional userId)     |
+| /api/bookings          | POST   | Creates a new booking                |
+| /api/bookings/:id/status | POST | Updates booking status               |
+
+---
+
+## Frontend Analysis
+
+### Application Entry (main.tsx)
+
+The application uses:
+- React StrictMode for development checks
+- TanStack Query for server state management
+- React Router for navigation
+- Error Boundaries for graceful error handling
+- Immer with MapSet support enabled
+
+### Route Structure
+
+"/"         → LandingPage
+"/dashboard" → DashboardPage (ProtectedRoute - USER)
+"/bookings"  → MyBookingsPage (ProtectedRoute - USER)
+"/admin"     → AdminPage (ProtectedRoute - ADMIN)
+
+### Authentication System (mock-auth.tsx)
+
+IMPORTANT: The current authentication is mock-based for development purposes. It stores user data in localStorage without real authentication.
+
+AuthContext provides:
+- user: User | null - Current user
+- login(role: UserRole) - Login with role
+- logout() - Clear session
+- isLoading: boolean - Loading state
+
+### Route Protection (ProtectedRoute.tsx)
+
+| Scenario                   | Behavior                  |
+|----------------------------|---------------------------|
+| No user                    | Redirect to /             |
+| USER accessing USER route  | Allow                     |
+| USER accessing ADMIN route | Redirect to /dashboard    |
+| ADMIN accessing any route  | Allow                     |
+
+---
+
+## Page Components
+
+### Landing Page (LandingPage.tsx)
+- Purpose: Marketing/login page
+- Features: Theme toggle, login buttons for USER/ADMIN roles
+- UI Elements: Gradient hero section, feature cards highlighting Edge-Native Speed, Atomic Integrity, Smart Sync
+
+### Dashboard Page (DashboardPage.tsx)
+- Purpose: Main user dashboard
+- Data Fetched: Venues list, User's bookings
+- Features: 
+  - Recent bookings display (top 3)
+  - Venue cards with booking capability
+  - Booking wizard integration
+
+### Admin Page (AdminPage.tsx)
+- Purpose: Administrative control panel
+- Features:
+  - Admin statistics (pending, approved today, capacity usage, total venues)
+  - Tabbed interface: Pending Requests | Resolution History
+  - Approve/Reject booking actions
+
+### My Bookings Page (MyBookingsPage.tsx)
+- Purpose: User's booking history
+- Features: Grid display of all user bookings with status indicators
+
+---
+
+## Key Components
+
+### BookingWizard (BookingWizard.tsx)
+
+A two-step booking flow:
+
+1. DETAILS Step: Date selection (calendar), session picker, purpose input
+2. VERIFY Step: OTP verification (currently accepts any 6 digits)
+
+### VenueCard (VenueCard.tsx)
+
+Displays venue information with:
+- Image with capacity badge
+- Location, description
+- Amenities (max 3 shown)
+- "Book Now" button
+
+### BookingRequestTable (BookingRequestTable.tsx)
+
+Admin table for managing bookings:
+- Requester info with avatar
+- Venue and time slot
+- Purpose (truncated)
+- Status badge (color-coded)
+- Approve/Reject action buttons
+
+### AppSidebar (app-sidebar.tsx)
+
+Role-based navigation:
+
+| Admin Navigation   | User Navigation  |
+|--------------------|------------------|
+| Admin Console      | Dashboard        |
+| Venue Management   | Venue Explorer   |
+| Global History     | My Bookings      |
+
+---
+
+## Error Handling System
+
+### Error Reporter (errorReporter.ts)
+
+Comprehensive client-side error reporting (795 lines):
+
+| Feature               | Description                                  |
+|-----------------------|----------------------------------------------|
+| Console Interception  | Intercepts console.warn and console.error    |
+| Global Error Handler  | Captures window.onerror events               |
+| Unhandled Rejections  | Monitors Promise rejections                  |
+| Deduplication         | 5-second window, precedence-based filtering  |
+| Stack Parsing         | Extracts relevant source file locations      |
+| Category Detection    | react, javascript, network, user, unknown    |
+
+Filtering Logic:
+- Skips React Router future flag warnings
+- Skips deprecated React lifecycle warnings
+- Requires relevant source code in stack for reporting
+- Global deduplication to avoid duplicate reports
+
+### Error Boundary (ErrorBoundary.tsx)
+
+Class component that:
+- Catches React rendering errors
+- Reports to backend via errorReporter
+- Displays fallback UI
+- Provides retry/go-home actions
+
+---
+
+## Styling System
+
+### Tailwind Configuration (tailwind.config.js)
+
+Custom Theme Extensions:
+
+| Category   | Customizations                                      |
+|------------|-----------------------------------------------------|
+| Fonts      | Inter (sans), JetBrains Mono (mono)                 |
+| Colors     | CSS variable-based system for theming               |
+| Shadows    | soft, glow, glow-lg, primary, glass                 |
+| Animations | fade-in, slide-up, scale-in, shimmer, glow, float   |
+| Gradients  | rainbow, primary, mesh                              |
+
+### CSS Layer System (index.css)
+
+| Layer      | Contents                                    |
+|------------|---------------------------------------------|
+| base       | Root CSS variables, light/dark themes       |
+| components | btn, btn-gradient, glass effects, animations|
+
+Color Scheme:
+- Light mode: White background, dark foreground
+- Dark mode: Near-black background, light foreground
+- Primary accent: Orange gradient (#F38020 → #E55A1B → #D14615)
+
+---
+
+## Build & Deployment
+
+### Vite Configuration (vite.config.ts)
+
+| Feature      | Configuration                                    |
+|--------------|--------------------------------------------------|
+| Plugins      | React, Cloudflare, watch-dependencies, reload    |
+| Source Maps  | Inline (production), enabled (dev)               |
+| Aliases      | @ → ./src, @shared → ./shared                    |
+| Optimization | Pre-bundles react, react-dom, react-router-dom   |
+
+### Wrangler Configuration (wrangler.jsonc)
+
+- Worker Name: nexus-reserve-deq6pjcovclezl7api7ye
+- Compatibility Date: 2025-04-24
+- SPA Mode: Single-page-application not-found handling
+- API Routing: Worker runs first for /api/* (except /api/docs/*)
+- Durable Objects: GlobalDurableObject binding
+
+---
+
+## File Summary Table
+
+| File                                    | Lines | Purpose                      |
+|-----------------------------------------|-------|------------------------------|
+| main.tsx                                | 65    | App entry, routing setup     |
+| shared/types.ts                         | 46    | Core TypeScript interfaces   |
+| shared/mock-data.ts                     | 70    | Seed data for entities       |
+| worker/index.ts                         | 84    | Worker entry, Hono app       |
+| worker/core-utils.ts                    | 322   | Entity base classes, DO utils|
+| worker/entities.ts                      | 39    | UserEntity, VenueEntity, etc |
+| worker/user-routes.ts                   | 63    | API route handlers           |
+| lib/mock-auth.tsx                       | 36    | Authentication context       |
+| lib/api-client.ts                       | 8     | Fetch wrapper                |
+| lib/errorReporter.ts                    | 795   | Client error reporting       |
+| pages/LandingPage.tsx                   | 72    | Landing/login page           |
+| pages/DashboardPage.tsx                 | 109   | User dashboard               |
+| pages/AdminPage.tsx                     | 86    | Admin dashboard              |
+| pages/MyBookingsPage.tsx                | 102   | User booking history         |
+| components/booking/BookingWizard.tsx    | 147   | Booking flow dialog          |
+| components/admin/BookingRequestTable.tsx| 144   | Admin booking table          |
+| components/app-sidebar.tsx              | 110   | Navigation sidebar           |
+| index.css                               | 189   | Global styles, theme         |
+| tailwind.config.js                      | 242   | Tailwind customization       |
+| vite.config.ts                          | 153   | Build configuration          |
+
+---
+
+## Observations & Potential Improvements
+
+### WARNING: Security Considerations
+- Mock authentication without real session management
+- No CSRF protection on state-changing endpoints
+- OTP verification accepts any 6-digit code
+
+### TIP: Architecture Strengths
+- Clean separation between frontend and backend
+- Type-safe API with shared types
+- Sophisticated entity pattern with atomic operations
+- Comprehensive error reporting system
+
+### CAUTION: Areas for Enhancement
+- Implement real authentication (OAuth, JWT)
+- Add input validation on API routes
+- Consider pagination for large booking lists
+- Add unit/integration tests

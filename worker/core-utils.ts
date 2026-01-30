@@ -318,8 +318,7 @@ export abstract class IndexedEntity<S extends { id: string }> extends Entity<S> 
 export interface Env {
   GlobalDurableObject: DurableObjectNamespace<GlobalDurableObject>;
   DB: D1Database;
-  GOOGLE_SERVICE_ACCOUNT: string; // JSON string of the service account key
-  GOOGLE_DRIVE_FOLDER_ID: string;
+  BUCKET: R2Bucket;
 }
 
 export function ok(c: any, data: any) {

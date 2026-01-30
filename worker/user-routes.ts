@@ -160,14 +160,31 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
         return bad(c, 'No file provided');
       }
 
-      const { GoogleDriveService } = await import('./drive');
-      const drive = new GoogleDriveService(c.env);
-      const result = await drive.uploadFile(file);
-
-      return ok(c, { url: result.webViewLink, fileId: result.id });
+      const { StorageService } = await import('./drive');
+      const storage = new StorageService(c.env);
+      const result = await storage.uploadFile(file); // No folderId needed for R2 (flat namespace)
+      return ok(c, { url: result.webViewLink });
     } catch (err: any) {
       console.error('Upload error:', err);
-      return bad(c, `Upload failed: ${err.message}`);
+      return c.json({ error: err.message }, 500);
     }
+  });
+
+  // Serve files from R2
+  app.get('/api/files/:key', async (c) => {
+    const key = c.req.param('key');
+    const object = await c.env.BUCKET.get(key);
+
+    if (!object) {
+      return c.text('File not found', 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('etag', object.httpEtag);
+
+    return new Response(object.body, {
+      headers,
+    });
   });
 }

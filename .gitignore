@@ -29,6 +29,5 @@ service-account.json
 .dev.vars
 
 # Lockfiles
-bun.lockb
 yarn.lock
 pnpm-lock.yaml

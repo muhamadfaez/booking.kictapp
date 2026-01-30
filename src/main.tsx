@@ -1,5 +1,6 @@
 import '@/lib/errorReporter';
 import { enableMapSet } from "immer";
+import { Toaster } from "sonner";
 enableMapSet();
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -100,6 +101,7 @@ createRoot(document.getElementById('root')!).render(
         <ErrorBoundary>
           <AuthProvider>
             <RouterProvider router={router} />
+            <Toaster richColors position="top-center" />
           </AuthProvider>
         </ErrorBoundary>
       </QueryClientProvider>

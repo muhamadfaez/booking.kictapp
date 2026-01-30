@@ -5,7 +5,7 @@ import type { Venue, Booking } from '@shared/types';
 import { useAuth } from '@/hooks/useAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ScheduleSidebar } from '@/components/schedule/ScheduleSidebar';
-import { ScheduleGrid } from '@/components/schedule/ScheduleGrid';
+import { WeeklyCalendar } from '@/components/schedule/WeeklyCalendar';
 import { Loader2 } from 'lucide-react';
 
 export default function SchedulePage() {
@@ -79,13 +79,16 @@ export default function SchedulePage() {
                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                         </div>
                     ) : (
-                        <ScheduleGrid
-                            date={date || new Date()}
-                            venues={filteredVenues}
-                            bookings={bookings || []}
-                            currentUserRole={user?.role}
-                            currentUserId={user?.id}
-                        />
+                        <div className="flex-1 overflow-hidden h-full">
+                            <WeeklyCalendar
+                                date={date || new Date()}
+                                setDate={(d) => setDate(d)}
+                                venues={filteredVenues}
+                                bookings={bookings || []}
+                                currentUserRole={user?.role}
+                                currentUserId={user?.id}
+                            />
+                        </div>
                     )}
                 </div>
             </div>

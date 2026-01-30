@@ -32,6 +32,13 @@ export interface Booking {
   status: BookingStatus;
   createdAt: number;
   purpose: string;
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+  programType?: 'STUDENT' | 'STAFF' | 'GUEST';
+  documents?: {
+    approvalLetterUrl?: string;
+    proposalUrl?: string;
+  };
 }
 export interface Chat {
   id: string;

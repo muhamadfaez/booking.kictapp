@@ -5,13 +5,13 @@ import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import type { Venue, SessionSlot } from "@shared/types";
 import { api } from "@/lib/api-client";
 import { useAuth } from '@/hooks/useAuth';
-import { CalendarDays, Clock, FileText, Shield, ArrowRight, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, UploadCloud, File as FileIcon, FileText } from 'lucide-react';
 
 interface BookingWizardProps {
   venue: Venue | null;
@@ -20,7 +20,8 @@ interface BookingWizardProps {
   onSuccess: () => void;
 }
 
-type Step = 'DETAILS' | 'VERIFY';
+type Step = 'DETAILS' | 'DOCS' | 'REVIEW';
+type ProgramType = 'STUDENT' | 'STAFF' | 'GUEST';
 
 const sessionOptions = [
   { value: 'MORNING', label: 'Morning', time: '08:00 - 12:00' },
@@ -35,24 +36,63 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [session, setSession] = useState<SessionSlot>('MORNING');
   const [purpose, setPurpose] = useState('');
+
+  // New State
+  const [programType, setProgramType] = useState<ProgramType>('STUDENT');
+  const [proposalFile, setProposalFile] = useState<File | null>(null);
+  const [approvalFile, setApprovalFile] = useState<File | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!venue) return null;
 
-  const handleNext = () => {
-    if (!date || !purpose.trim()) {
-      toast.error("Please fill in all details", {
-        description: "Select a date and enter the purpose of your booking."
-      });
-      return;
+  const handleNext = async () => {
+    if (step === 'DETAILS') {
+      if (!date || !purpose.trim()) {
+        toast.error("Please fill in all details");
+        return;
+      }
+      setStep('DOCS');
+    } else if (step === 'DOCS') {
+      // Validate Docs
+      if (!proposalFile) {
+        toast.error("Proposal document is required");
+        return;
+      }
+      if (programType === 'STUDENT' && !approvalFile) {
+        toast.error("Approval Letter is required for Student Programs");
+        return;
+      }
+      setStep('REVIEW');
     }
-    setStep('VERIFY');
   };
 
-  const handleFinalSubmit = async (otpValue: string) => {
-    if (otpValue.length !== 6) return;
+  const uploadFileToDrive = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    return data.data.url;
+  };
+
+  const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     try {
+      let proposalUrl = '';
+      let approvalUrl = '';
+
+      // Upload Files
+      if (proposalFile) {
+        proposalUrl = await uploadFileToDrive(proposalFile);
+      }
+      if (programType === 'STUDENT' && approvalFile) {
+        approvalUrl = await uploadFileToDrive(approvalFile);
+      }
+
       await api('/api/bookings', {
         method: 'POST',
         body: JSON.stringify({
@@ -61,11 +101,16 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           userName: user?.name,
           date: format(date!, 'yyyy-MM-dd'),
           session,
-          purpose
+          purpose,
+          programType,
+          documents: {
+            proposalUrl,
+            approvalLetterUrl: approvalUrl
+          }
         })
       });
       toast.success("Booking Request Submitted!", {
-        description: "Your request is pending admin approval.",
+        description: "Documents uploaded and request pending approval.",
         icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />
       });
       onSuccess();
@@ -73,7 +118,6 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
       reset();
     } catch (err: any) {
       toast.error(err.message || "Failed to book");
-      setStep('DETAILS');
     } finally {
       setIsSubmitting(false);
     }
@@ -84,158 +128,213 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     setDate(new Date());
     setSession('MORNING');
     setPurpose('');
+    setProgramType('STUDENT');
+    setProposalFile(null);
+    setApprovalFile(null);
   };
 
-  const selectedSession = sessionOptions.find(s => s.value === session);
+  const FileUploader = ({
+    label,
+    file,
+    setFile,
+    required
+  }: { label: string, file: File | null, setFile: (f: File | null) => void, required?: boolean }) => (
+    <div className="space-y-2">
+      <Label className="text-sm font-semibold flex items-center gap-2">
+        {label} {required && <span className="text-destructive">*</span>}
+      </Label>
+      <div className={`border-2 border-dashed rounded-xl p-4 transition-all ${file ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'}`}>
+        {file ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FileIcon className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{file.name}</p>
+                <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setFile(null)} className="text-destructive hover:bg-destructive/10">
+              Remove
+            </Button>
+          </div>
+        ) : (
+          <label className="flex flex-col items-center justify-center gap-2 cursor-pointer py-4">
+            <UploadCloud className="w-8 h-8 text-muted-foreground" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">Click to upload</p>
+              <p className="text-xs text-muted-foreground">PDF, DOCX up to 10MB</p>
+            </div>
+            <input
+              type="file"
+              className="hidden"
+              accept=".pdf,.doc,.docx"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) setFile(f);
+              }}
+            />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+
+  const selectedSession = sessionOptions.find(opt => opt.value === session);
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-        {/* Header with gradient */}
-        <div className="bg-gradient-subtle p-6 border-b border-border/50">
+      <DialogContent className="sm:max-w-[300px] md:max-w-[650px] p-0 overflow-hidden transition-all duration-300">
+        <div className="bg-gradient-subtle p-5 border-b border-border/50">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{venue.name}</DialogTitle>
             <DialogDescription className="mt-2">
-              {venue.location} • Capacity: {venue.capacity} people
+              New Booking Request
             </DialogDescription>
           </DialogHeader>
 
-          {/* Progress Steps */}
-          <div className="flex items-center gap-3 mt-6">
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${step === 'DETAILS'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'bg-card text-muted-foreground'
-              }`}>
-              <CalendarDays className="w-4 h-4" />
-              <span>1. Details</span>
-            </div>
-            <div className="h-px flex-1 bg-border" />
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${step === 'VERIFY'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'bg-card text-muted-foreground'
-              }`}>
-              <Shield className="w-4 h-4" />
-              <span>2. Verify</span>
-            </div>
+          {/* Steps */}
+          <div className="flex items-center gap-2 mt-5 text-xs font-semibold">
+            <div className={`px-3 py-1 rounded-full ${step === 'DETAILS' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>1. Details</div>
+            <div className="w-4 h-px bg-border"></div>
+            <div className={`px-3 py-1 rounded-full ${step === 'DOCS' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>2. Documents</div>
+            <div className="w-4 h-px bg-border"></div>
+            <div className={`px-3 py-1 rounded-full ${step === 'REVIEW' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>3. Review</div>
           </div>
         </div>
 
-        {/* Content */}
         <div className="p-6">
-          {step === 'DETAILS' ? (
-            <div className="space-y-6 animate-fade-in">
-              {/* Date Selection */}
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-primary" />
-                  Select Date
-                </Label>
-                <div className="border rounded-xl p-2 bg-card">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
-                    className="rounded-lg mx-auto"
-                  />
+          {step === 'DETAILS' && (
+            <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
+              <div className="space-y-4">
+                <Label>Date</Label>
+                <div className="border rounded-xl p-3 flex justify-center">
+                  <Calendar mode="single" selected={date} onSelect={setDate} className="rounded-md" disabled={(d) => d < new Date()} />
                 </div>
               </div>
-
-              {/* Session Selection */}
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-primary" />
-                  Session Time
-                </Label>
-                <Select value={session} onValueChange={(v) => setSession(v as SessionSlot)}>
-                  <SelectTrigger className="h-12 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sessionOptions.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value} className="py-3">
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium">{opt.label}</span>
-                          <span className="text-xs text-muted-foreground">{opt.time}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Purpose */}
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary" />
-                  Purpose of Booking
-                </Label>
-                <Input
-                  placeholder="e.g., Weekly Team Sync, Client Presentation"
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  className="h-12 rounded-xl"
-                />
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <Label>Session</Label>
+                  <Select value={session} onValueChange={(v) => setSession(v as SessionSlot)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {sessionOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Purpose</Label>
+                  <Input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Event Name" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Program Type</Label>
+                  <RadioGroup value={programType} onValueChange={(v) => setProgramType(v as ProgramType)} className="flex gap-4">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="STUDENT" id="r1" />
+                      <Label htmlFor="r1">Student</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="STAFF" id="r2" />
+                      <Label htmlFor="r2">Staff</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="GUEST" id="r3" />
+                      <Label htmlFor="r3">Guest</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
               </div>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center space-y-8 py-6 animate-fade-in">
-              <div className="text-center space-y-2">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mx-auto mb-4">
-                  <Shield className="w-8 h-8 text-primary" />
-                </div>
-                <p className="text-lg font-semibold">Verification Required</p>
-                <p className="text-sm text-muted-foreground">
-                  Enter the 6-digit code sent to <span className="font-medium text-foreground">{user?.email}</span>
-                </p>
+          )}
+
+          {step === 'DOCS' && (
+            <div className="space-y-6 animate-fade-in py-2">
+              <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-lg text-sm mb-4">
+                Uploading documents to Google Drive. Please ensure files are under 10MB.
               </div>
 
-              <InputOTP maxLength={6} onComplete={handleFinalSubmit} disabled={isSubmitting}>
-                <InputOTPGroup className="gap-2">
-                  {[0, 1, 2, 3, 4, 5].map(i => (
-                    <InputOTPSlot
-                      key={i}
-                      index={i}
-                      className="w-12 h-14 text-lg font-bold rounded-xl border-2 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    />
-                  ))}
-                </InputOTPGroup>
-              </InputOTP>
+              <FileUploader
+                label="Program Proposal"
+                file={proposalFile}
+                setFile={setProposalFile}
+                required
+              />
 
-              <p className="text-xs text-muted-foreground bg-muted/50 px-4 py-2 rounded-full">
-                Demo: Enter any 6 digits to proceed
-              </p>
+              {programType === 'STUDENT' && (
+                <FileUploader
+                  label="SDCE Approval Letter"
+                  file={approvalFile}
+                  setFile={setApprovalFile}
+                  required
+                />
+              )}
+            </div>
+          )}
+
+          {step === 'REVIEW' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-muted/50 p-4 rounded-xl space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground font-medium mb-1">Venue</p>
+                    <p className="font-semibold">{venue.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground font-medium mb-1">Date & Time</p>
+                    <p className="font-semibold">{date ? format(date, 'MMM dd, yyyy') : 'N/A'}</p>
+                    <p className="text-xs text-muted-foreground">{selectedSession?.label} ({selectedSession?.time})</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground font-medium mb-1">Purpose</p>
+                    <p className="font-semibold">{purpose}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground font-medium mb-1">Program Type</p>
+                    <p className="font-semibold">{programType}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Documents to be Uploaded
+                </h4>
+                <div className="space-y-2">
+                  {proposalFile && (
+                    <div className="flex items-center gap-2 text-sm bg-card border p-2 rounded-lg">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <span>{proposalFile.name} (Proposal)</span>
+                    </div>
+                  )}
+                  {approvalFile && (
+                    <div className="flex items-center gap-2 text-sm bg-card border p-2 rounded-lg">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <span>{approvalFile.name} (Approval Letter)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <DialogFooter className="p-6 pt-0">
-          {step === 'DETAILS' ? (
-            <Button onClick={handleNext} className="w-full btn-gradient h-12 rounded-xl text-base font-semibold">
-              Continue to Verification
-              <ArrowRight className="ml-2 w-5 h-5" />
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => setStep('DETAILS')}
-              disabled={isSubmitting}
-              className="w-full h-12 rounded-xl text-base"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 w-5 h-5 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <ArrowLeft className="mr-2 w-5 h-5" />
-                  Back to Details
-                </>
-              )}
-            </Button>
-          )}
+        <DialogFooter className="p-5 pt-0">
+          <div className="flex w-full justify-between gap-2">
+            {step !== 'DETAILS' && (
+              <Button variant="outline" onClick={() => setStep(step === 'REVIEW' ? 'DOCS' : 'DETAILS')} disabled={isSubmitting}>
+                Back
+              </Button>
+            )}
+            {step !== 'REVIEW' ? (
+              <Button onClick={handleNext} className="ml-auto w-full md:w-auto">Next <ArrowRight className="w-4 h-4 ml-2" /></Button>
+            ) : (
+              <Button onClick={handleFinalSubmit} disabled={isSubmitting} className="ml-auto w-full md:w-auto btn-gradient">
+                {isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</> : "Confirm & Submit Request"}
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

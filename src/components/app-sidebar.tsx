@@ -9,7 +9,8 @@ import {
   LogOut,
   User as UserIcon,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  CalendarDays
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,10 +35,11 @@ export function AppSidebar(): JSX.Element {
   const navItems = isAdmin ? [
     { title: "Admin Console", icon: ShieldCheck, href: "/admin" },
     { title: "Venue Management", icon: Building2, href: "/admin/venues" },
+    { title: "Global Schedule", icon: CalendarDays, href: "/schedule" },
     { title: "Global History", icon: History, href: "/admin/history" },
   ] : [
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { title: "Venue Explorer", icon: Building2, href: "/dashboard" },
+    { title: "Schedule", icon: CalendarDays, href: "/schedule" },
     { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
   ];
 

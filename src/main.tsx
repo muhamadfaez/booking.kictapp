@@ -19,6 +19,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import AdminPage from '@/pages/AdminPage'
 import VenueManagementPage from '@/pages/VenueManagementPage'
 import BookingHistoryPage from '@/pages/BookingHistoryPage'
+import SchedulePage from '@/pages/SchedulePage'
 import { AuthProvider } from '@/lib/mock-auth'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 
@@ -41,6 +42,15 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute requiredRole="USER">
         <DashboardPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/schedule",
+    element: (
+      <ProtectedRoute requiredRole="USER">
+        <SchedulePage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,

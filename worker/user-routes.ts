@@ -34,7 +34,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       location,
       capacity: Number(capacity),
       description: description || '',
-      imageUrl: imageUrl || ''
+      imageUrl: imageUrl || '',
+      amenities: []
     };
 
     const created = await VenueEntity.create(c.env, newVenue);
@@ -147,5 +148,26 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     // Update status to CANCELLED instead of deleting
     await booking.patch({ status: 'CANCELLED' });
     return ok(c, await booking.getState());
+  });
+
+  // UPLOADS
+  app.post('/api/upload', async (c) => {
+    try {
+      const body = await c.req.parseBody();
+      const file = body['file'];
+
+      if (!(file instanceof File)) {
+        return bad(c, 'No file provided');
+      }
+
+      const { GoogleDriveService } = await import('./drive');
+      const drive = new GoogleDriveService(c.env);
+      const result = await drive.uploadFile(file);
+
+      return ok(c, { url: result.webViewLink, fileId: result.id });
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      return bad(c, `Upload failed: ${err.message}`);
+    }
   });
 }

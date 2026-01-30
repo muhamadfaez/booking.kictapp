@@ -7,9 +7,7 @@ import type { ApiResponse } from "@shared/types";
 import { DurableObject } from "cloudflare:workers"; // DO NOT MODIFY THIS LINE. This is always already installed and available
 import type { Context } from "hono";
 
-export interface Env {
-  GlobalDurableObject: DurableObjectNamespace<GlobalDurableObject>;
-}
+// Env interface is defined at the bottom of the file
 
 type Doc<T> = { v: number; data: T };
 
@@ -52,22 +50,22 @@ export class GlobalDurableObject extends DurableObject<Env, unknown> {
   async listPrefix(prefix: string, startAfter?: string | null, limit?: number) {
     const opts: Record<string, unknown> = { prefix };
     if (limit != null) opts.limit = limit;
-    if (startAfter)   opts.startAfter = startAfter;
-  
+    if (startAfter) opts.startAfter = startAfter;
+
     const m = await this.ctx.storage.list(opts);            // Map<string, unknown>
     const names = Array.from((m as Map<string, unknown>).keys());
     // Heuristic: if we got "limit" items, assume there might be more; use the last key as the cursor.
     const next = limit != null && names.length === limit ? names[names.length - 1] : null;
     return { keys: names, next };
   }
-  
+
   async indexAddBatch<T>(items: T[]): Promise<void> {
     if (items.length === 0) return;
     await this.ctx.storage.transaction(async (txn) => {
       for (const it of items) await txn.put('i:' + String(it), 1);
     });
   }
-  
+
   async indexRemoveBatch<T>(items: T[]): Promise<number> {
     if (items.length === 0) return 0;
     let removed = 0;
@@ -80,13 +78,13 @@ export class GlobalDurableObject extends DurableObject<Env, unknown> {
       }
     });
     return removed;
-  }  
+  }
 
   async indexDrop(_rootKey: string): Promise<void> { await this.ctx.storage.deleteAll(); }
 }
 
 export interface EntityStatics<S, T extends Entity<S>> {
-  new (env: Env, id: string): T; // inherited default ctor
+  new(env: Env, id: string): T; // inherited default ctor
   readonly entityName: string;
   readonly initialState: S;
 }
@@ -316,7 +314,26 @@ export abstract class IndexedEntity<S extends { id: string }> extends Entity<S> 
 
 // API HELPERS
 
-export const ok = <T>(c: Context, data: T) => c.json({ success: true, data } as ApiResponse<T>);
-export const bad = (c: Context, error: string) => c.json({ success: false, error } as ApiResponse, 400);
-export const notFound = (c: Context, error = 'not found') => c.json({ success: false, error } as ApiResponse, 404);
-export const isStr = (s: unknown): s is string => typeof s === 'string' && s.length > 0;
+// Unified Env Interface
+export interface Env {
+  GlobalDurableObject: DurableObjectNamespace<GlobalDurableObject>;
+  DB: D1Database;
+  GOOGLE_SERVICE_ACCOUNT: string; // JSON string of the service account key
+  GOOGLE_DRIVE_FOLDER_ID: string;
+}
+
+export function ok(c: any, data: any) {
+  return c.json({ success: true, data });
+}
+
+export function bad(c: any, message: string) {
+  return c.json({ success: false, error: message }, 400);
+}
+
+export function notFound(c: any, message: string) {
+  return c.json({ success: false, error: message }, 404);
+}
+
+export function isStr(v: any): v is string {
+  return typeof v === 'string';
+}

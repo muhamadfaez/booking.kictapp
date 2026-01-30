@@ -37,7 +37,9 @@ export interface Booking {
   programType?: 'STUDENT' | 'STAFF' | 'GUEST';
   documents?: {
     approvalLetterUrl?: string;
+    approvalLetterDownloadUrl?: string;
     proposalUrl?: string;
+    proposalDownloadUrl?: string;
   };
 }
 export interface Chat {

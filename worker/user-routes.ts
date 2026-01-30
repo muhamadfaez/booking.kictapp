@@ -160,10 +160,22 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
         return bad(c, 'No file provided');
       }
 
+      const venueName = body['venueName'] as string || 'UnknownVenue';
+      const date = body['date'] as string || 'UnknownDate';
+      const purpose = body['purpose'] as string || 'UnknownPurpose';
+
+      // Sanitize filename parts
+      const safe = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 20);
+      const customFilename = `${safe(venueName)}_${safe(date)}_${safe(purpose)}_${file.name}`;
+
       const { GoogleDriveService } = await import('./drive');
       const drive = new GoogleDriveService(c.env);
-      const result = await drive.uploadFile(file);
-      return ok(c, { url: result.webViewLink });
+      const result = await drive.uploadFile(file, undefined, customFilename);
+
+      return ok(c, {
+        url: result.webViewLink,
+        downloadUrl: result.webContentLink
+      });
     } catch (err: any) {
       console.error('Upload error:', err);
       return c.json({ error: err.message }, 500);

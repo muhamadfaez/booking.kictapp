@@ -67,30 +67,40 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     }
   };
 
-  const uploadFileToDrive = async (file: File) => {
+  const uploadFileToDrive = async (file: File, meta: { venueName: string, date: string, purpose: string }) => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('venueName', meta.venueName);
+    formData.append('date', meta.date);
+    formData.append('purpose', meta.purpose);
+
     const res = await fetch('/api/upload', {
       method: 'POST',
       body: formData
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
-    return data.data.url;
+    return data.data; // Returns { url, downloadUrl }
   };
 
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     try {
-      let proposalUrl = '';
-      let approvalUrl = '';
+      const meta = {
+        venueName: venue.name,
+        date: format(date!, 'yyyy-MM-dd'),
+        purpose
+      };
 
       // Upload Files
+      let proposalDocs = { url: '', downloadUrl: '' };
+      let approvalDocs = { url: '', downloadUrl: '' };
+
       if (proposalFile) {
-        proposalUrl = await uploadFileToDrive(proposalFile);
+        proposalDocs = await uploadFileToDrive(proposalFile, meta);
       }
       if (programType === 'STUDENT' && approvalFile) {
-        approvalUrl = await uploadFileToDrive(approvalFile);
+        approvalDocs = await uploadFileToDrive(approvalFile, meta);
       }
 
       await api('/api/bookings', {
@@ -104,8 +114,10 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           purpose,
           programType,
           documents: {
-            proposalUrl,
-            approvalLetterUrl: approvalUrl
+            proposalUrl: proposalDocs.url,
+            proposalDownloadUrl: proposalDocs.downloadUrl,
+            approvalLetterUrl: approvalDocs.url,
+            approvalLetterDownloadUrl: approvalDocs.downloadUrl
           }
         })
       });

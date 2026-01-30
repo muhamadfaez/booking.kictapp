@@ -45,12 +45,12 @@ export class GoogleDriveService {
         return this.token!;
     }
 
-    async uploadFile(file: File, folderId?: string): Promise<{ id: string; webViewLink: string }> {
+    async uploadFile(file: File, folderId?: string, customFilename?: string): Promise<{ id: string; webViewLink: string; webContentLink: string }> {
         const token = await this.getAccessToken();
         const targetFolder = folderId || this.env.GOOGLE_DRIVE_FOLDER_ID;
 
         const metadata = {
-            name: file.name,
+            name: customFilename || file.name,
             mimeType: file.type,
             parents: targetFolder ? [targetFolder] : [],
         };
@@ -63,7 +63,7 @@ export class GoogleDriveService {
         form.append("file", file);
 
         const match = await fetch(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink",
             {
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}` },

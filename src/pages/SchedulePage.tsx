@@ -4,8 +4,7 @@ import { api } from '@/lib/api-client';
 import type { Venue, Booking } from '@shared/types';
 import { useAuth } from '@/hooks/useAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { ScheduleSidebar } from '@/components/schedule/ScheduleSidebar';
-import { WeeklyCalendar } from '@/components/schedule/WeeklyCalendar';
+import { CalendarView } from '@/components/schedule/CalendarView';
 import { Loader2 } from 'lucide-react';
 
 export default function SchedulePage() {
@@ -65,30 +64,21 @@ export default function SchedulePage() {
                     <p className="text-muted-foreground">View facility availability and upcoming bookings.</p>
                 </header>
 
-                <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden">
-                    <ScheduleSidebar
-                        date={date}
-                        setDate={setDate}
-                        venues={venues || []}
-                        selectedVenues={selectedVenues}
-                        toggleVenue={toggleVenue}
-                    />
-
+                <div className="flex-1 overflow-hidden h-full">
                     {bookingsLoading ? (
-                        <div className="flex-1 flex items-center justify-center bg-card rounded-lg border">
+                        <div className="flex items-center justify-center h-full bg-card rounded-lg border">
                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                         </div>
                     ) : (
-                        <div className="flex-1 overflow-hidden h-full">
-                            <WeeklyCalendar
-                                date={date || new Date()}
-                                setDate={(d) => setDate(d)}
-                                venues={filteredVenues}
-                                bookings={bookings || []}
-                                currentUserRole={user?.role}
-                                currentUserId={user?.id}
-                            />
-                        </div>
+                        <CalendarView
+                            date={date || new Date()}
+                            setDate={(d) => setDate(d)}
+                            venues={venues || []}
+                            bookings={bookings || []}
+                            currentUserRole={user?.role}
+                            currentUserId={user?.id}
+                            onVenueFilterChange={setSelectedVenues}
+                        />
                     )}
                 </div>
             </div>

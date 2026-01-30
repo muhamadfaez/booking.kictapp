@@ -45,9 +45,9 @@ export function AppSidebar(): JSX.Element {
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="p-4">
+      <SidebarHeader className="p-4 group-data-[collapsible=icon]:p-2 transition-all">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 transition-all">
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div className="flex flex-col truncate group-data-[collapsible=icon]:hidden">
@@ -57,7 +57,7 @@ export function AppSidebar(): JSX.Element {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-3">
+      <SidebarContent className="px-3 group-data-[collapsible=icon]:!px-0">
         <SidebarGroup>
           <SidebarMenu className="gap-1">
             {navItems.map((item, index) => {
@@ -108,10 +108,10 @@ export function AppSidebar(): JSX.Element {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3">
-        <div className="rounded-xl bg-muted/50 p-3 group-data-[collapsible=icon]:p-2 transition-all duration-200">
+      <SidebarFooter className="p-3 group-data-[collapsible=icon]:p-2">
+        <div className="rounded-xl bg-muted/50 p-3 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-transparent transition-all duration-200">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br from-secondary to-secondary/80 flex items-center justify-center overflow-hidden border-2 border-background shadow-sm">
+            <div className="h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br from-secondary to-secondary/80 flex items-center justify-center overflow-hidden border-2 border-background shadow-sm group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 transition-all">
               {user?.avatar ? (
                 <img src={user.avatar} alt={user.name} className="h-full w-full object-cover" />
               ) : (

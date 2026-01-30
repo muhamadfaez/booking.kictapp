@@ -189,7 +189,8 @@ export default function LoginPage() {
             <header className="w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex h-16 items-center justify-between">
-                        <button
+                        <div />
+                        {/* <button
                             onClick={() => navigate('/')}
                             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
                         >
@@ -200,7 +201,7 @@ export default function LoginPage() {
                                 <span className="text-lg font-bold tracking-tight">BookingTrack</span>
                                 <span className="text-[10px] text-muted-foreground hidden sm:block">Professional Venue Management</span>
                             </div>
-                        </button>
+                        </button> */}
                         <ThemeToggle />
                     </div>
                 </div>

@@ -36,8 +36,6 @@ export function DashboardHeader() {
         <SidebarTrigger className="-ml-1 hover:bg-muted rounded-lg transition-colors" />
         <Separator orientation="vertical" className="h-5" />
         <nav className="flex items-center space-x-1.5 text-sm">
-          <span className="text-muted-foreground font-medium">BookingTrack</span>
-          <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
           <span className="text-foreground font-semibold">{getPageTitle()}</span>
         </nav>
       </div>
@@ -72,7 +70,7 @@ export function DashboardHeader() {
                   {user?.name?.[0]?.toUpperCase() || ''}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm font-medium hidden sm:block">{user?.name?.split(' ')[0]}</span>
+              {/* <span className="text-sm font-medium hidden sm:block">{user?.name?.split(' ')[0]}</span> */}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-64 p-2" align="end" sideOffset={8}>

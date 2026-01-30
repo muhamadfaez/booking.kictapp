@@ -67,12 +67,13 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     }
   };
 
-  const uploadFileToDrive = async (file: File, meta: { venueName: string, date: string, purpose: string }) => {
+  const uploadFileToDrive = async (file: File, meta: { docType: string, purpose: string, date: string, userName: string }) => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('venueName', meta.venueName);
-    formData.append('date', meta.date);
+    formData.append('docType', meta.docType);
     formData.append('purpose', meta.purpose);
+    formData.append('date', meta.date);
+    formData.append('userName', meta.userName);
 
     const res = await fetch('/api/upload', {
       method: 'POST',
@@ -86,10 +87,10 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const meta = {
-        venueName: venue.name,
+      const baseMeta = {
+        purpose,
         date: format(date!, 'yyyy-MM-dd'),
-        purpose
+        userName: user?.name || 'UnknownUser'
       };
 
       // Upload Files
@@ -97,10 +98,10 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
       let approvalDocs = { url: '', downloadUrl: '' };
 
       if (proposalFile) {
-        proposalDocs = await uploadFileToDrive(proposalFile, meta);
+        proposalDocs = await uploadFileToDrive(proposalFile, { ...baseMeta, docType: 'PROPOSAL' });
       }
       if (programType === 'STUDENT' && approvalFile) {
-        approvalDocs = await uploadFileToDrive(approvalFile, meta);
+        approvalDocs = await uploadFileToDrive(approvalFile, { ...baseMeta, docType: 'APPROVAL_LETTER' });
       }
 
       await api('/api/bookings', {

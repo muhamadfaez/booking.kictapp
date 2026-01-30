@@ -111,7 +111,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       session: session as SessionSlot,
       status: 'PENDING',
       createdAt: Date.now(),
-      purpose
+      purpose,
+      documents: body.documents
     };
     const created = await BookingEntity.create(c.env, newBooking);
     return ok(c, created);
@@ -160,13 +161,16 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
         return bad(c, 'No file provided');
       }
 
-      const venueName = body['venueName'] as string || 'UnknownVenue';
-      const date = body['date'] as string || 'UnknownDate';
+      const docType = body['docType'] as string || 'DOC';
       const purpose = body['purpose'] as string || 'UnknownPurpose';
+      const date = body['date'] as string || 'UnknownDate';
+      const userName = body['userName'] as string || 'UnknownUser';
 
       // Sanitize filename parts
-      const safe = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 20);
-      const customFilename = `${safe(venueName)}_${safe(date)}_${safe(purpose)}_${file.name}`;
+      const safe = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 30);
+
+      // Format: DOC_TYPE_PURPOSE_DATE_USER
+      const customFilename = `${safe(docType)}_${safe(purpose)}_${safe(date)}_${safe(userName)}`;
 
       const { GoogleDriveService } = await import('./drive');
       const drive = new GoogleDriveService(c.env);

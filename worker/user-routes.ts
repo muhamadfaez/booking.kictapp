@@ -22,7 +22,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
 
   app.post('/api/venues', async (c) => {
     const body = await c.req.json() as any;
-    const { name, location, capacity, description, imageUrl } = body;
+    const { name, location, capacity, description, imageUrl, amenities } = body;
 
     if (!name || !location || !capacity) {
       return bad(c, 'Missing required fields: name, location, capacity');
@@ -35,7 +35,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       capacity: Number(capacity),
       description: description || '',
       imageUrl: imageUrl || '',
-      amenities: []
+      amenities: amenities || []
     };
 
     const created = await VenueEntity.create(c.env, newVenue);
@@ -49,7 +49,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const venue = new VenueEntity(c.env, id);
     if (!await venue.exists()) return notFound(c, 'Venue not found');
 
-    const { name, location, capacity, description, imageUrl } = body;
+    const { name, location, capacity, description, imageUrl, amenities } = body;
     const updates: any = {};
 
     if (name !== undefined) updates.name = name;
@@ -57,6 +57,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     if (capacity !== undefined) updates.capacity = Number(capacity);
     if (description !== undefined) updates.description = description;
     if (imageUrl !== undefined) updates.imageUrl = imageUrl;
+    if (amenities !== undefined) updates.amenities = amenities;
 
     await venue.patch(updates);
     return ok(c, await venue.getState());
@@ -151,6 +152,27 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, await booking.getState());
   });
 
+  // IMAGES PROXY
+  app.get('/api/images/:id', async (c) => {
+    const id = c.req.param('id');
+    try {
+      const { GoogleDriveService } = await import('./drive');
+      const drive = new GoogleDriveService(c.env);
+
+      const { stream, contentType } = await drive.getFileStream(id);
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=31536000, immutable'
+        }
+      });
+    } catch (err) {
+      console.error('Proxy error:', err);
+      return notFound(c, 'Image not found or inaccessible');
+    }
+  });
+
   // UPLOADS
   app.post('/api/upload', async (c) => {
     try {
@@ -170,14 +192,19 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const safe = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 30);
 
       // Format: DOC_TYPE_PURPOSE_DATE_USER
-      const customFilename = `${safe(docType)}_${safe(purpose)}_${safe(date)}_${safe(userName)}`;
+      const ext = file.name.split('.').pop();
+      const customFilename = `${safe(docType)}_${safe(purpose)}_${safe(date)}_${safe(userName)}.${ext}`;
 
       const { GoogleDriveService } = await import('./drive');
       const drive = new GoogleDriveService(c.env);
       const result = await drive.uploadFile(file, undefined, customFilename);
 
+      // Return local proxy URL instead of Google URL
+      // This is robust against 3rd party cookie blocking/permissions
+      const proxyUrl = `/api/images/${result.id}`;
+
       return ok(c, {
-        url: result.webViewLink,
+        url: proxyUrl,
         downloadUrl: result.webContentLink
       });
     } catch (err: any) {

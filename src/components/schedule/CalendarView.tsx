@@ -49,6 +49,17 @@ export function CalendarView({
     const [view, setView] = useState<CalendarViewMode>('week');
     const [selectedVenues, setSelectedVenues] = useState<string[]>([]);
 
+    // Helper to parse "YYYY-MM-DD" string as local date (00:00:00)
+    // Prevents timezone issues where new Date("2026-02-28") might become Feb 27th in certain TZs
+    const parseLocalDate = (dateStr: string) => {
+        if (!dateStr) return new Date();
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        }
+        return new Date(dateStr);
+    };
+
     // Initialize selected venues
     useEffect(() => {
         if (venues.length > 0 && selectedVenues.length === 0) {
@@ -296,7 +307,7 @@ export function CalendarView({
                                 {/* Event Columns */}
                                 <div className="absolute inset-0 flex">
                                     {viewRange.days?.map((day, dayIndex) => {
-                                        const dayBookings = bookings.filter(b => isSameDay(new Date(b.date), day));
+                                        const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day));
                                         const visibleBookings = dayBookings.filter(b => selectedVenues.includes(b.venueId));
 
                                         return (
@@ -341,7 +352,7 @@ export function CalendarView({
                                                                         <div className="space-y-1 text-sm text-muted-foreground">
                                                                             <div className="flex items-center gap-2">
                                                                                 <Clock className="w-4 h-4" />
-                                                                                <span>{format(new Date(booking.date), 'MMM d, yyyy')}</span>
+                                                                                <span>{format(parseLocalDate(booking.date), 'MMM d, yyyy')}</span>
                                                                             </div>
                                                                             <div className="ml-6 text-xs">
                                                                                 {booking.startTime && booking.endTime
@@ -390,7 +401,7 @@ export function CalendarView({
                                 {viewRange.days?.map((day, i) => {
                                     const isMonthStart = isSameDay(day, startOfMonth(date)); // Highlight 1st day of month
                                     const isCurrentMonth = isSameMonth(day, date);
-                                    const dayBookings = bookings.filter(b => isSameDay(new Date(b.date), day) && selectedVenues.includes(b.venueId));
+                                    const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId));
 
                                     return (
                                         <div key={i} className={cn(
@@ -418,7 +429,7 @@ export function CalendarView({
                                                         )}
                                                         title={booking.purpose}
                                                     >
-                                                        <span className="font-semibold">{format(new Date(booking.date), 'h:mm a') || booking.session}</span> {booking.purpose}
+                                                        <span className="font-semibold">{format(parseLocalDate(booking.date), 'h:mm a') || booking.session}</span> {booking.purpose}
                                                     </div>
                                                 ))}
                                                 {dayBookings.length > 4 && (
@@ -452,7 +463,7 @@ export function CalendarView({
                                         ))}
                                         {/* Days */}
                                         {eachDayOfInterval({ start: startOfMonth(monthDate), end: endOfMonth(monthDate) }).map(day => {
-                                            const dayBookings = bookings.filter(b => isSameDay(new Date(b.date), day) && selectedVenues.includes(b.venueId));
+                                            const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId));
                                             const hasEvents = dayBookings.length > 0;
 
                                             return (

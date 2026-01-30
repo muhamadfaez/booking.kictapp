@@ -45,7 +45,7 @@ export class GoogleDriveService {
         return this.token!;
     }
 
-    async uploadFile(file: File, folderId?: string, customFilename?: string): Promise<{ id: string; webViewLink: string; webContentLink: string }> {
+    async uploadFile(file: File, folderId?: string, customFilename?: string): Promise<{ id: string; webViewLink: string; webContentLink: string; thumbnailLink: string }> {
         const token = await this.getAccessToken();
         const targetFolder = folderId || this.env.GOOGLE_DRIVE_FOLDER_ID;
 
@@ -63,7 +63,7 @@ export class GoogleDriveService {
         form.append("file", file);
 
         const match = await fetch(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink",
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink,thumbnailLink",
             {
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}` },
@@ -100,5 +100,21 @@ export class GoogleDriveService {
         } catch (e) {
             console.warn("Failed to make file public", e);
         }
+    }
+    async getFileStream(fileId: string): Promise<{ stream: ReadableStream; contentType: string }> {
+        const token = await this.getAccessToken();
+
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch file stream: ${response.statusText}`);
+        }
+
+        return {
+            stream: response.body!,
+            contentType: response.headers.get('Content-Type') || 'application/octet-stream'
+        };
     }
 }

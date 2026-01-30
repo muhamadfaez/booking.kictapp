@@ -48,7 +48,12 @@ export default function BookingHistoryPage() {
             );
         }
 
-        return filtered;
+        // Sort by createdAt (desc) or date (desc)
+        return filtered.sort((a, b) => {
+            const timeA = a.createdAt || new Date(a.date).getTime();
+            const timeB = b.createdAt || new Date(b.date).getTime();
+            return timeB - timeA;
+        });
     }, [bookings, statusFilter, searchQuery, venueMap]);
 
     const stats = useMemo(() => {

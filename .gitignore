@@ -22,3 +22,13 @@ dist
 # OS
 .DS_Store
 Thumbs.db
+
+# Security
+service-account.json
+.env
+.dev.vars
+
+# Lockfiles
+bun.lockb
+yarn.lock
+pnpm-lock.yaml

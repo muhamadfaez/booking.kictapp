@@ -173,7 +173,7 @@ export default function BookingHistoryPage() {
                                             b.date,
                                             b.userName,
                                             venueMap[b.venueId] || b.venueId,
-                                            b.session,
+                                            b.startTime && b.endTime ? `${b.startTime}-${b.endTime}` : (b.session || 'N/A'),
                                             `"${b.purpose.replace(/"/g, '""')}"`,
                                             b.status
                                         ].join(','))

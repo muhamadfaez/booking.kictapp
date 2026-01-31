@@ -162,6 +162,30 @@ export function CalendarView({
         return colors[hash % colors.length];
     };
 
+    // Helper to format time range securely
+    const formatBookingTime = (booking: Booking) => {
+        const formatTime = (timeStr?: string) => {
+            if (!timeStr) return '';
+            const [h, m] = timeStr.split(':').map(Number);
+            const date = new Date();
+            date.setHours(h, m);
+            return format(date, 'h:mm a');
+        };
+
+        if (booking.startTime && booking.endTime) {
+            return `${formatTime(booking.startTime)} - ${formatTime(booking.endTime)}`;
+        }
+
+        // Fallback for legacy sessions
+        const sessionMap: Record<string, string> = {
+            'MORNING': '8:00 AM - 12:00 PM',
+            'AFTERNOON': '1:00 PM - 5:00 PM',
+            'EVENING': '6:00 PM - 10:00 PM',
+            'FULL_DAY': '8:00 AM - 10:00 PM'
+        };
+        return sessionMap[booking.session || ''] || booking.session || '';
+    };
+
     const getBookingContent = (booking: Booking, venue: Venue, compact = false) => {
         return (
             <div className="flex flex-col h-full overflow-hidden">
@@ -172,9 +196,7 @@ export function CalendarView({
                     <>
                         <div className="text-[10px] opacity-80 truncate flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3" />
-                            {booking.startTime && booking.endTime
-                                ? `${booking.startTime} - ${booking.endTime}`
-                                : booking.session}
+                            {formatBookingTime(booking)}
                         </div>
                         <div className="text-[10px] font-medium opacity-90 truncate mt-0.5 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
@@ -185,6 +207,111 @@ export function CalendarView({
             </div>
         )
     };
+
+    // ... (inside component)
+
+
+
+
+    // Helper to get time in Asia/Kuala_Lumpur
+    const getAsianTime = () => {
+        const now = new Date();
+        const timeString = now.toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" });
+        return new Date(timeString);
+    };
+
+    const asianTime = getAsianTime();
+    const currentHour = getHours(asianTime);
+    const currentMinute = getMinutes(asianTime);
+
+    // Helper: Calculate layout for overlapping events
+    const calculateLayout = (bookings: Booking[]) => {
+        // 1. Sort by start time, then end time
+        const sorted = [...bookings].sort((a, b) => {
+            const getMins = (bk: Booking) => {
+                if (bk.startTime) {
+                    const [h, m] = bk.startTime.split(':').map(Number);
+                    return h * 60 + m;
+                }
+                // Fallback for sessions
+                if (bk.session === 'MORNING') return 8 * 60;
+                if (bk.session === 'AFTERNOON') return 13 * 60;
+                if (bk.session === 'EVENING') return 18 * 60;
+                return 8 * 60;
+            };
+            return getMins(a) - getMins(b);
+        });
+
+        const layout: Record<string, { left: string; width: string }> = {};
+        const columns: Booking[][] = [];
+
+        sorted.forEach(booking => {
+            // Find the first column where this booking fits without overlap
+            let placed = false;
+            for (let i = 0; i < columns.length; i++) {
+                const col = columns[i];
+                const lastInCol = col[col.length - 1];
+
+                // Get end time of last booking in column
+                const getEndMins = (bk: Booking) => {
+                    if (bk.endTime) {
+                        const [h, m] = bk.endTime.split(':').map(Number);
+                        return h * 60 + m;
+                    }
+                    if (bk.session === 'MORNING') return 12 * 60;
+                    if (bk.session === 'AFTERNOON') return 17 * 60;
+                    if (bk.session === 'EVENING') return 22 * 60;
+                    return 22 * 60;
+                };
+
+                const getStartMins = (bk: Booking) => {
+                    if (bk.startTime) {
+                        const [h, m] = bk.startTime.split(':').map(Number);
+                        return h * 60 + m;
+                    }
+                    if (bk.session === 'MORNING') return 8 * 60;
+                    if (bk.session === 'AFTERNOON') return 13 * 60;
+                    if (bk.session === 'EVENING') return 18 * 60;
+                    return 8 * 60;
+                }
+
+                if (getEndMins(lastInCol) <= getStartMins(booking)) {
+                    col.push(booking);
+                    placed = true;
+                    // We calculate precise width/left later, but for now assign column index
+                    // Actually, simple column assignment isn't enough for complex overlaps like "Brick Layout"
+                    // But for simple "Columns" approach where overlapping groups share width:
+                    break;
+                }
+            }
+            if (!placed) {
+                columns.push([booking]);
+            }
+        });
+
+        // Simple grid strategy: if we have N columns at any point, width is 100/N %
+        // BUT, simplified approach for now:
+        // Divide width by total columns found for the day (simplest) or per overlapping group (better)
+        // Let's use the simple "overlapping group" logic if possible, or just strict columns for today.
+
+        // Strict columns for the entire set of overlapping events is easier to implement reliably without a full graph coloring algo.
+        // If columns.length is 2, all events in col 0 get left:0%, width:50%. events in col 1 get left:50%, width:50%.
+
+        const totalCols = columns.length;
+        columns.forEach((col, colIndex) => {
+            col.forEach(booking => {
+                layout[booking.id] = {
+                    left: `${(colIndex / totalCols) * 100}%`,
+                    width: `${98 / totalCols}%` // slightly less than 100/N to show gap
+                };
+            });
+        });
+
+        return layout;
+    };
+
+    // State for clicked booking details
+    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
 
     return (
         <div className="flex flex-col h-full bg-background rounded-lg border shadow-sm overflow-hidden">
@@ -286,13 +413,20 @@ export function CalendarView({
                         </div>
 
                         <div className="flex min-h-[1440px] relative">
-                            {/* Time Axis Column (Now scrollable with content) */}
-                            <div className="w-12 sm:w-16 flex-shrink-0 border-r bg-muted/5 flex flex-col pointer-events-none z-10">
-                                {HOURS.map(hour => (
-                                    <div key={hour} className="h-[60px] text-[10px] sm:text-xs text-muted-foreground text-center -mt-2.5 relative">
-                                        {hour === 0 ? '' : format(setHours(new Date(), hour), 'h a')}
-                                    </div>
-                                ))}
+                            {/* Time Axis Column - Using absolute positioning for labels */}
+                            <div className="w-12 sm:w-16 flex-shrink-0 border-r bg-muted/5 relative pointer-events-none z-10">
+                                {HOURS.map(hour => {
+                                    if (hour === 0) return null; // Skip 00:00 at top logic or handle differently
+                                    return (
+                                        <div
+                                            key={hour}
+                                            className="absolute w-full text-right pr-2 text-[10px] sm:text-xs text-muted-foreground font-medium"
+                                            style={{ top: `${hour * 60}px`, transform: 'translateY(-50%)' }}
+                                        >
+                                            {format(setHours(new Date(), hour), 'h a')}
+                                        </div>
+                                    );
+                                })}
                             </div>
 
                             {/* Main Grid Content */}
@@ -310,13 +444,16 @@ export function CalendarView({
                                         const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day));
                                         const visibleBookings = dayBookings.filter(b => selectedVenues.includes(b.venueId));
 
+                                        // Calculate layout for overlaps
+                                        const overlapLayout = calculateLayout(visibleBookings);
+
                                         return (
                                             <div key={dayIndex} className="flex-1 border-r last:border-r-0 relative group/day">
                                                 {/* Current Time Indicator */}
                                                 {isToday(day) && (
                                                     <div
                                                         className="absolute w-full border-t-2 border-red-500 z-40 pointer-events-none flex items-center"
-                                                        style={{ top: `${(getHours(new Date()) * 60) + getMinutes(new Date())}px` }}
+                                                        style={{ top: `${(currentHour * 60) + currentMinute}px` }}
                                                     >
                                                         <div className="w-2 h-2 rounded-full bg-red-500 -ml-1"></div>
                                                     </div>
@@ -327,51 +464,29 @@ export function CalendarView({
                                                     const venue = venues.find(v => v.id === booking.venueId);
                                                     if (!venue) return null;
 
-                                                    const style = getPositionStyle(booking.startTime, booking.endTime, booking.session);
+                                                    const position = getPositionStyle(booking.startTime, booking.endTime, booking.session);
+                                                    const layoutStyle = overlapLayout[booking.id] || { left: '0%', width: '100%' };
+
                                                     const isMyBooking = booking.userId === currentUserId;
                                                     const canSeeDetails = currentUserRole === 'ADMIN' || isMyBooking;
 
                                                     return (
-                                                        <TooltipProvider key={booking.id}>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <div
-                                                                        className={cn(
-                                                                            "absolute left-0.5 right-1 rounded border-l-4 p-1 text-xs transition-all cursor-pointer shadow-sm overflow-hidden hover:z-50 hover:shadow-md hover:ring-1 hover:ring-ring",
-                                                                            getVenueColor(booking.venueId),
-                                                                            !canSeeDetails && "opacity-80 grayscale"
-                                                                        )}
-                                                                        style={style}
-                                                                    >
-                                                                        {getBookingContent(booking, venue)}
-                                                                    </div>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent className="p-0 border-none shadow-xl bg-background text-foreground z-50">
-                                                                    <div className="p-3 w-64 border rounded-md bg-popover">
-                                                                        <h4 className="font-bold mb-1">{booking.purpose}</h4>
-                                                                        <div className="space-y-1 text-sm text-muted-foreground">
-                                                                            <div className="flex items-center gap-2">
-                                                                                <Clock className="w-4 h-4" />
-                                                                                <span>{format(parseLocalDate(booking.date), 'MMM d, yyyy')}</span>
-                                                                            </div>
-                                                                            <div className="ml-6 text-xs">
-                                                                                {booking.startTime && booking.endTime
-                                                                                    ? `${booking.startTime} - ${booking.endTime}`
-                                                                                    : booking.session}
-                                                                            </div>
-                                                                            <div className="flex items-center gap-2 pt-2 border-t mt-2">
-                                                                                <MapPin className="w-4 h-4" />
-                                                                                <span className="font-semibold text-foreground">{venue?.name}</span>
-                                                                            </div>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <UserIcon className="w-4 h-4" />
-                                                                                <span>{canSeeDetails ? booking.userName : "Hidden User"}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                        <div
+                                                            key={booking.id}
+                                                            onClick={() => setSelectedBooking(booking)}
+                                                            className={cn(
+                                                                "absolute rounded border-l-4 p-1 text-xs transition-all cursor-pointer shadow-sm overflow-hidden hover:z-50 hover:shadow-md hover:ring-1 hover:ring-ring",
+                                                                getVenueColor(booking.venueId),
+                                                                !canSeeDetails && "opacity-80 grayscale"
+                                                            )}
+                                                            style={{
+                                                                ...position,
+                                                                left: layoutStyle.left,
+                                                                width: layoutStyle.width
+                                                            }}
+                                                        >
+                                                            {getBookingContent(booking, venue)}
+                                                        </div>
                                                     )
                                                 })}
                                             </div>
@@ -419,19 +534,32 @@ export function CalendarView({
                                             </div>
 
                                             <div className="flex flex-col gap-1 px-1 mt-1">
-                                                {dayBookings.slice(0, 4).map(booking => (
-                                                    <div
-                                                        key={booking.id}
-                                                        className={cn(
-                                                            "text-[10px] px-1.5 py-0.5 rounded border truncate cursor-pointer",
-                                                            getVenueColor(booking.venueId),
-                                                            "border-l-2"
-                                                        )}
-                                                        title={booking.purpose}
-                                                    >
-                                                        <span className="font-semibold">{format(parseLocalDate(booking.date), 'h:mm a') || booking.session}</span> {booking.purpose}
-                                                    </div>
-                                                ))}
+                                                {dayBookings.slice(0, 4).map(booking => {
+                                                    const venue = venues.find(v => v.id === booking.venueId);
+                                                    return (
+                                                        <div
+                                                            key={booking.id}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedBooking(booking);
+                                                            }}
+                                                            className={cn(
+                                                                "text-[10px] px-1.5 py-1 rounded border overflow-hidden cursor-pointer hover:opacity-80 flex flex-col gap-0.5",
+                                                                getVenueColor(booking.venueId),
+                                                                "border-l-2"
+                                                            )}
+                                                            title={`${booking.purpose} (${formatBookingTime(booking)})`}
+                                                        >
+                                                            <div className="flex justify-between items-center gap-1">
+                                                                <span className="font-bold truncate">{booking.purpose}</span>
+                                                            </div>
+                                                            <div className="opacity-90 font-medium truncate text-[9px] flex items-center gap-1">
+                                                                <Clock className="w-2.5 h-2.5" />
+                                                                {formatBookingTime(booking)}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
                                                 {dayBookings.length > 4 && (
                                                     <div className="text-[10px] text-center text-muted-foreground font-medium">
                                                         +{dayBookings.length - 4} more
@@ -490,6 +618,85 @@ export function CalendarView({
                     </ScrollArea>
                 )}
             </div>
+
+            {/* DETAILS DIALOG */}
+            {selectedBooking && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in-0">
+                    <div className="bg-card w-full max-w-sm rounded-lg border shadow-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 border-b flex justify-between items-start bg-muted/20">
+                            <div>
+                                <h3 className="font-semibold text-lg leading-tight">{selectedBooking.purpose}</h3>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Booked by {selectedBooking.userName}
+                                </p>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 -mr-2 -mt-2 opacity-70 hover:opacity-100"
+                                onClick={() => setSelectedBooking(null)}
+                            >
+                                <Check className="w-4 h-4 sr-only" />
+                                {/* Using generic 'X' close visual or just clicking outside logic if implemented, but manual button is safer */}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                            </Button>
+                        </div>
+                        <div className="p-4 space-y-4">
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                                    <Clock className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <p className="font-medium">Time & Date</p>
+                                    <p className="text-muted-foreground text-xs">
+                                        {format(parseLocalDate(selectedBooking.date), 'EEEE, MMM d, yyyy')}
+                                    </p>
+                                    <p className="text-muted-foreground text-xs font-mono mt-0.5">
+                                        {selectedBooking.startTime && selectedBooking.endTime
+                                            ? `${selectedBooking.startTime} - ${selectedBooking.endTime}`
+                                            : selectedBooking.session?.replace('_', ' ') || 'N/A'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                                    <MapPin className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <p className="font-medium">Venue</p>
+                                    <p className="text-muted-foreground text-xs">
+                                        {venues.find(v => v.id === selectedBooking.venueId)?.name || 'Unknown Venue'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                                    <Filter className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <p className="font-medium">Status</p>
+                                    <div className={cn(
+                                        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                                        selectedBooking.status === 'APPROVED' && "border-transparent bg-green-500 text-white shadow hover:bg-green-600",
+                                        selectedBooking.status === 'PENDING' && "border-transparent bg-amber-500 text-white shadow hover:bg-amber-600",
+                                        selectedBooking.status === 'REJECTED' && "border-transparent bg-red-500 text-white shadow hover:bg-red-600",
+                                        selectedBooking.status === 'CANCELLED' && "border-transparent bg-gray-500 text-white shadow hover:bg-gray-600",
+                                    )}>
+                                        {selectedBooking.status}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t bg-muted/20 flex justify-end">
+                            <Button variant="outline" size="sm" onClick={() => setSelectedBooking(null)}>
+                                Close
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

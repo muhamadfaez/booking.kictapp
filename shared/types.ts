@@ -28,7 +28,7 @@ export interface Booking {
   userId: string;
   userName: string;
   date: string; // YYYY-MM-DD
-  session: SessionSlot;
+  session?: SessionSlot;
   status: BookingStatus;
   createdAt: number;
   purpose: string;

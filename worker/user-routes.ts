@@ -94,27 +94,34 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
 
   app.post('/api/bookings', async (c) => {
     const body = await c.req.json() as Partial<Booking>;
-    const { venueId, userId, date, session, purpose, userName } = body;
-    if (!venueId || !userId || !date || !session || !purpose || !userName) {
+    const { venueId, userId, date, session, startTime, endTime, purpose, userName } = body;
+
+    // Validation: Require basic fields + either session OR (startTime AND endTime)
+    if (!venueId || !userId || !date || (!session && (!startTime || !endTime)) || !purpose || !userName) {
       return bad(c, 'Missing required booking fields');
     }
-    // Atomic availability check (simplified for Phase 1)
-    const available = await BookingEntity.checkAvailability(c.env, venueId, date, session as SessionSlot);
+
+    // Atomic availability check
+    const available = await BookingEntity.checkAvailability(c.env, venueId, date, startTime, endTime, session as SessionSlot);
     if (!available) {
       return bad(c, 'This slot is already reserved or pending approval');
     }
+
     const newBooking: Booking = {
       id: crypto.randomUUID(),
       venueId,
       userId,
       userName,
       date,
-      session: session as SessionSlot,
+      session: session as SessionSlot, // Optional now
+      startTime,
+      endTime,
       status: 'PENDING',
       createdAt: Date.now(),
       purpose,
       documents: body.documents
     };
+
     const created = await BookingEntity.create(c.env, newBooking);
     return ok(c, created);
   });

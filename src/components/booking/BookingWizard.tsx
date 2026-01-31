@@ -34,7 +34,8 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const { user } = useAuth();
   const [step, setStep] = useState<Step>('DETAILS');
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [session, setSession] = useState<SessionSlot>('MORNING');
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('10:00');
   const [purpose, setPurpose] = useState('');
 
   // New State
@@ -48,8 +49,12 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
   const handleNext = async () => {
     if (step === 'DETAILS') {
-      if (!date || !purpose.trim()) {
+      if (!date || !purpose.trim() || !startTime || !endTime) {
         toast.error("Please fill in all details");
+        return;
+      }
+      if (startTime >= endTime) {
+        toast.error("End time must be after start time");
         return;
       }
       setStep('DOCS');
@@ -111,7 +116,9 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           userId: user?.id,
           userName: user?.name,
           date: format(date!, 'yyyy-MM-dd'),
-          session,
+          startTime,
+          endTime,
+          // session removed
           purpose,
           programType,
           documents: {
@@ -139,13 +146,15 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const reset = () => {
     setStep('DETAILS');
     setDate(new Date());
-    setSession('MORNING');
+    setStartTime('08:00');
+    setEndTime('10:00');
     setPurpose('');
     setProgramType('STUDENT');
     setProposalFile(null);
     setApprovalFile(null);
   };
-
+  // ...
+  // ...
   const FileUploader = ({
     label,
     file,
@@ -194,8 +203,6 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     </div>
   );
 
-  const selectedSession = sessionOptions.find(opt => opt.value === session);
-
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[300px] md:max-w-[650px] p-0 overflow-hidden transition-all duration-300">
@@ -227,14 +234,15 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
                 </div>
               </div>
               <div className="space-y-5">
-                <div className="space-y-2">
-                  <Label>Session</Label>
-                  <Select value={session} onValueChange={(v) => setSession(v as SessionSlot)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {sessionOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Time</Label>
+                    <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Time</Label>
+                    <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Purpose</Label>
@@ -296,7 +304,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
                   <div>
                     <p className="text-muted-foreground font-medium mb-1">Date & Time</p>
                     <p className="font-semibold">{date ? format(date, 'MMM dd, yyyy') : 'N/A'}</p>
-                    <p className="text-xs text-muted-foreground">{selectedSession?.label} ({selectedSession?.time})</p>
+                    <p className="text-xs text-muted-foreground">{startTime} - {endTime}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground font-medium mb-1">Purpose</p>

@@ -149,7 +149,7 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
                         <Calendar className="h-3.5 w-3.5" />
                         <span>{format(new Date(booking.date), 'MMM dd')}</span>
                         <span className="text-muted-foreground/50">•</span>
-                        <span>{booking.session.replace('_', ' ')}</span>
+                        <span>{booking.startTime && booking.endTime ? `${booking.startTime}-${booking.endTime}` : (booking.session?.replace('_', ' ') || 'N/A')}</span>
                       </div>
                     </div>
                   </TableCell>

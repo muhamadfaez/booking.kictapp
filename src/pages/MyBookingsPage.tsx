@@ -169,7 +169,12 @@ export default function MyBookingsPage() {
                     <div className="space-y-2 pt-2 border-t border-border/50">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Clock className="w-4 h-4" />
-                        <span className="font-medium">{booking.session.replace('_', ' ')}</span>
+                        <span className="font-medium">
+                          {booking.startTime && booking.endTime
+                            ? `${booking.startTime} - ${booking.endTime}`
+                            : booking.session ? booking.session.replace('_', ' ') : 'N/A'
+                          }
+                        </span>
                       </div>
                     </div>
                   </CardContent>

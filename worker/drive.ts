@@ -101,6 +101,7 @@ export class GoogleDriveService {
             console.warn("Failed to make file public", e);
         }
     }
+
     async getFileStream(fileId: string): Promise<{ stream: ReadableStream; contentType: string }> {
         const token = await this.getAccessToken();
 
@@ -116,5 +117,19 @@ export class GoogleDriveService {
             stream: response.body!,
             contentType: response.headers.get('Content-Type') || 'application/octet-stream'
         };
+    }
+
+    async deleteFile(fileId: string): Promise<void> {
+        const token = await this.getAccessToken();
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            console.error(`Failed to delete file ${fileId}: ${error}`);
+            // We don't throw here to avoid blocking the main flow if deletion fails
+        }
     }
 }

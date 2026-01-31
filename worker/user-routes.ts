@@ -131,6 +131,34 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const { status } = await c.req.json() as { status: string };
     const booking = new BookingEntity(c.env, id);
     if (!await booking.exists()) return notFound(c, 'Booking not found');
+
+    // Privacy & Cleanup: If rejected, delete associated documents
+    if (status === 'REJECTED') {
+      const bookingData = await booking.getState();
+      if (bookingData.documents) {
+        try {
+          const { GoogleDriveService } = await import('./drive');
+          const drive = new GoogleDriveService(c.env);
+
+          // documents is an object with keys like approvalLetterUrl, proposalUrl, etc.
+          const docUrls = Object.values(bookingData.documents).filter(url => typeof url === 'string') as string[];
+
+          for (const docUrl of docUrls) {
+            // Extract ID from /api/images/ID or similar
+            // Our upload returns /api/images/FILE_ID
+            const match = docUrl.match(/\/api\/images\/([a-zA-Z0-9-_]+)/);
+            if (match && match[1]) {
+              console.log(`Deleting rejected file: ${match[1]}`);
+              await drive.deleteFile(match[1]);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to clean up rejected files:', err);
+          // Don't block the status update if cleanup fails
+        }
+      }
+    }
+
     await booking.patch({ status: status as any });
     return ok(c, await booking.getState());
   });

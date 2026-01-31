@@ -186,11 +186,11 @@ export function CalendarView({
         return sessionMap[booking.session || ''] || booking.session || '';
     };
 
-    const getBookingContent = (booking: Booking, venue: Venue, compact = false) => {
+    const getBookingContent = (booking: Booking, venue: Venue, compact = false, canSeeDetails = true) => {
         return (
             <div className="flex flex-col h-full overflow-hidden">
                 <div className="font-semibold truncate leading-tight text-[11px] sm:text-xs">
-                    {booking.purpose}
+                    {canSeeDetails ? booking.purpose : "Booked"}
                 </div>
                 {!compact && (
                     <>
@@ -485,7 +485,7 @@ export function CalendarView({
                                                                 width: layoutStyle.width
                                                             }}
                                                         >
-                                                            {getBookingContent(booking, venue)}
+                                                            {getBookingContent(booking, venue, false, canSeeDetails)}
                                                         </div>
                                                     )
                                                 })}
@@ -516,7 +516,7 @@ export function CalendarView({
                                 {viewRange.days?.map((day, i) => {
                                     const isMonthStart = isSameDay(day, startOfMonth(date)); // Highlight 1st day of month
                                     const isCurrentMonth = isSameMonth(day, date);
-                                    const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId));
+                                    const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId) && b.status !== 'REJECTED'); // Filter rejected and venue
 
                                     return (
                                         <div key={i} className={cn(
@@ -591,7 +591,7 @@ export function CalendarView({
                                         ))}
                                         {/* Days */}
                                         {eachDayOfInterval({ start: startOfMonth(monthDate), end: endOfMonth(monthDate) }).map(day => {
-                                            const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId));
+                                            const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId) && b.status !== 'REJECTED');
                                             const hasEvents = dayBookings.length > 0;
 
                                             return (
@@ -627,7 +627,7 @@ export function CalendarView({
                             <div>
                                 <h3 className="font-semibold text-lg leading-tight">{selectedBooking.purpose}</h3>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    Booked by {selectedBooking.userName}
+                                    Booked by {(currentUserRole === 'ADMIN' || selectedBooking.userId === currentUserId) ? selectedBooking.userName : "Hidden User"}
                                 </p>
                             </div>
                             <Button

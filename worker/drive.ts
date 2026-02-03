@@ -1,48 +1,17 @@
 import { Env } from './core-utils';
+import { GoogleAuth } from './google-auth';
 
 export class GoogleDriveService {
     private env: Env;
-    private token: string | null = null;
-    private tokenExpiresAt: number = 0;
+    private auth: GoogleAuth;
 
     constructor(env: Env) {
         this.env = env;
+        this.auth = new GoogleAuth(env);
     }
 
-    /**
-     * Exchanges Refresh Token for Access Token
-     */
     private async getAccessToken(): Promise<string> {
-        if (this.token && Date.now() < this.tokenExpiresAt - 60000) {
-            return this.token;
-        }
-
-        if (!this.env.GOOGLE_REFRESH_TOKEN || !this.env.GOOGLE_CLIENT_ID || !this.env.GOOGLE_CLIENT_SECRET) {
-            throw new Error("Missing Google OAuth credentials in .dev.vars");
-        }
-
-        const params = new URLSearchParams({
-            client_id: this.env.GOOGLE_CLIENT_ID,
-            client_secret: this.env.GOOGLE_CLIENT_SECRET,
-            refresh_token: this.env.GOOGLE_REFRESH_TOKEN,
-            grant_type: "refresh_token",
-        });
-
-        const response = await fetch("https://oauth2.googleapis.com/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: params,
-        });
-
-        const data = await response.json() as any;
-        if (!response.ok) {
-            throw new Error(`Auth failed: ${JSON.stringify(data)}`);
-        }
-
-        this.token = data.access_token;
-        // Expires in usually 3600 seconds
-        this.tokenExpiresAt = Date.now() + (data.expires_in * 1000);
-        return this.token!;
+        return this.auth.getAccessToken();
     }
 
     async uploadFile(file: File, folderId?: string, customFilename?: string): Promise<{ id: string; webViewLink: string; webContentLink: string; thumbnailLink: string }> {

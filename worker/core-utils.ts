@@ -322,6 +322,10 @@ export interface Env {
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REFRESH_TOKEN: string;
   GOOGLE_DRIVE_FOLDER_ID: string;
+  JWT_SECRET: string;
+  Variables: {
+    user: any;
+  };
 }
 
 export function ok(c: any, data: any) {
@@ -339,3 +343,29 @@ export function notFound(c: any, message: string) {
 export function isStr(v: any): v is string {
   return typeof v === 'string';
 }
+
+import { verify } from 'hono/jwt';
+
+export const verifyAuth = async (c: Context<{ Bindings: Env, Variables: { user: any } }>, next: any) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return c.json({ success: false, error: 'Unauthorized' }, 401);
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = await verify(token, c.env.JWT_SECRET || 'dev-secret-fallback', 'HS256');
+    c.set('user', payload); // Store user in context
+    await next();
+  } catch (err) {
+    return c.json({ success: false, error: 'Invalid Token' }, 401);
+  }
+};
+
+export const verifyAdmin = async (c: Context<{ Bindings: Env, Variables: { user: any } }>, next: any) => {
+  const user = c.get('user');
+  if (!user || user.role !== 'ADMIN') {
+    return c.json({ success: false, error: 'Forbidden: Admin access required' }, 403);
+  }
+  await next();
+};

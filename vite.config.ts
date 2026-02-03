@@ -45,7 +45,7 @@ const customLogger = {
   hasErrorLogged: () => false,
 
   // Keep these as-is
-  clearScreen: () => {},
+  clearScreen: () => { },
   hasWarned: false,
 };
 
@@ -108,7 +108,7 @@ export default ({ mode }: { mode: string }) => {
     plugins: [react(), cloudflare(), watchDependenciesPlugin(), reloadTriggerPlugin()],
     build: {
       minify: true,
-      sourcemap: "inline", // Use inline source maps for better error reporting
+      sourcemap: false, // Disable sourcemaps to prevent Wrangler URL scheme error
       rollupOptions: {
         output: {
           sourcemapExcludeSources: false, // Include original source in source maps

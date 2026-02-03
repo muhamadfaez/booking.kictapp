@@ -76,8 +76,17 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
             formData.append('date', new Date().toISOString().split('T')[0]);
             formData.append('userName', 'ADMIN');
 
+            const token = localStorage.getItem('nexus_token');
+            if (!token) {
+                throw new Error("You are not logged in. Please refresh or login again.");
+            }
+            const headers: HeadersInit = {
+                'Authorization': `Bearer ${token}`
+            };
+
             const res = await fetch('/api/upload', {
                 method: 'POST',
+                headers,
                 body: formData
             });
 

@@ -10,17 +10,9 @@ import { useGoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-// Simulated verification codes storage (in production, this would be server-side)
-const pendingVerifications: Map<string, string> = new Map();
-
-// Generate a 6-digit code
-function generateVerificationCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
 export default function LoginPage() {
     const navigate = useNavigate();
-    const { loginWithEmail, loginWithGoogle } = useAuth();
+    const { loginWithEmail, loginWithGoogle, verifyOtp } = useAuth();
     const [email, setEmail] = useState('');
     const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
     const [showVerification, setShowVerification] = useState(false);
@@ -43,8 +35,8 @@ export default function LoginPage() {
 
                 const { email, name, picture } = userInfo.data;
 
-                // Login with real Google data
-                const user = loginWithGoogle(email, name, picture);
+                // Login with real Google data via backend
+                const user = await loginWithGoogle(email, name, picture);
 
                 toast.success(`Welcome, ${name}!`);
 
@@ -54,9 +46,10 @@ export default function LoginPage() {
                 } else {
                     navigate('/dashboard');
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Google Sign-In Error:', error);
-                toast.error('Failed to sign in with Google. Please try again.');
+                const errorMessage = error?.message || 'Unknown error occurred';
+                toast.error(`Sign in failed: ${errorMessage}`);
             }
         },
         onError: () => {
@@ -78,23 +71,24 @@ export default function LoginPage() {
         setError('');
         setIsLoading(true);
 
-        // Generate and store verification code
-        const code = generateVerificationCode();
-        pendingVerifications.set(email.toLowerCase(), code);
-        setSentCode(code);
+        try {
+            // Request OTP from backend
+            const debugCode = await loginWithEmail(email);
+            setSentCode(debugCode);
 
-        // Simulate sending email (with delay)
-        await new Promise(resolve => setTimeout(resolve, 1500));
+            setIsLoading(false);
+            setShowVerification(true);
+            setShowCodeSentMessage(true);
 
-        setIsLoading(false);
-        setShowVerification(true);
-        setShowCodeSentMessage(true);
+            // Hide the code message after 15 seconds
+            setTimeout(() => setShowCodeSentMessage(false), 15000);
 
-        // Hide the code message after 15 seconds
-        setTimeout(() => setShowCodeSentMessage(false), 15000);
-
-        // In production, you would send an actual email here
-        console.log(`Verification code for ${email}: ${code}`);
+            toast.success("Verification code sent!");
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || 'Failed to send verification code');
+            setIsLoading(false);
+        }
     };
 
     const handleCodeChange = (index: number, value: string) => {
@@ -139,21 +133,17 @@ export default function LoginPage() {
         setError('');
         setIsLoading(true);
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const storedCode = pendingVerifications.get(email.toLowerCase());
-
-        if (enteredCode === storedCode) {
-            pendingVerifications.delete(email.toLowerCase());
-            const user = loginWithEmail(email);
+        try {
+            const user = await verifyOtp(email, enteredCode);
 
             if (user.role === 'ADMIN') {
                 navigate('/admin');
             } else {
                 navigate('/dashboard');
             }
-        } else {
-            setError('Invalid verification code. Please try again.');
+        } catch (err: any) {
+            console.error(err);
+            setError('Invalid verification code or expired.');
             setIsLoading(false);
         }
     };
@@ -170,17 +160,19 @@ export default function LoginPage() {
         setIsLoading(true);
         setError('');
 
-        const code = generateVerificationCode();
-        pendingVerifications.set(email.toLowerCase(), code);
-        setSentCode(code);
+        try {
+            const debugCode = await loginWithEmail(email);
+            setSentCode(debugCode);
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+            setIsLoading(false);
+            setShowCodeSentMessage(true);
+            setTimeout(() => setShowCodeSentMessage(false), 15000);
 
-        setIsLoading(false);
-        setShowCodeSentMessage(true);
-        setTimeout(() => setShowCodeSentMessage(false), 15000);
-
-        console.log(`New verification code for ${email}: ${code}`);
+            toast.success("Code resent!");
+        } catch (err: any) {
+            setError(err.message || "Failed to resend code");
+            setIsLoading(false);
+        }
     };
 
     return (

@@ -1,19 +1,49 @@
-// Modified to fix production deployment - static import required for bundled code
-
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
 import { Env } from './core-utils';
-import { userRoutes } from './user-routes';
 export * from './core-utils';
 
 export type ClientErrorReport = { message: string; url: string; timestamp: string } & Record<string, unknown>;
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env, Variables: { user: any } }>();
+
+// Security Headers
+app.use('*', secureHeaders());
+
+// Simple Rate Limiting (In-memory, per-isolate)
+const rateInfos = new Map<string, { count: number; lastReset: number }>();
+app.use('/api/*', async (c, next) => {
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = Date.now();
+
+  let info = rateInfos.get(ip);
+  if (!info || now - info.lastReset > 60000) {
+    info = { count: 0, lastReset: now };
+    rateInfos.set(ip, info);
+  }
+
+  if (info.count > 100) { // 100 requests per minute per IP
+    return c.json({ success: false, error: 'Too many requests' }, 429);
+  }
+
+  info.count++;
+  await next();
+});
 
 app.use('*', logger());
 
-app.use('/api/*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization'] }));
+app.use('/api/*', cors({
+  origin: (origin) => {
+    // Allow localhost during dev, otherwise could restrict
+    // For now allowing all is "okay" if we trust the client app, but better to restrict in prod
+    return origin || '*';
+  },
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length', 'X-Kuma-Revision']
+}));
 
 app.get('/api/health', (c) => c.json({ success: true, data: { status: 'healthy', timestamp: new Date().toISOString() } }));
 
@@ -28,6 +58,11 @@ app.post('/api/client-errors', async (c) => {
   }
 });
 
+import { userRoutes } from './user-routes';
+import { authRoutes } from './auth-routes';
+
+// Load auth routes
+authRoutes(app);
 // Load user routes
 userRoutes(app);
 

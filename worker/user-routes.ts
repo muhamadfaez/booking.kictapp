@@ -1,26 +1,26 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, VenueEntity, BookingEntity } from "./entities";
-import { ok, bad, notFound, isStr } from './core-utils';
+import { ok, bad, notFound, isStr, verifyAuth, verifyAdmin } from './core-utils';
 import type { Booking, SessionSlot } from "@shared/types";
 
-export function userRoutes(app: Hono<{ Bindings: Env }>) {
-  // SEED INITIAL DATA
-  app.get('/api/init', async (c) => {
+export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }>) {
+  // SEED INITIAL DATA (Admin Only)
+  app.get('/api/init', verifyAuth, verifyAdmin, async (c) => {
     await UserEntity.ensureSeed(c.env);
     await VenueEntity.ensureSeed(c.env);
     await BookingEntity.ensureSeed(c.env);
     return ok(c, "Seeded");
   });
 
-  // VENUES
+  // VENUES (Public Read)
   app.get('/api/venues', async (c) => {
     await VenueEntity.ensureSeed(c.env);
     const list = await VenueEntity.list(c.env);
     return ok(c, list.items);
   });
 
-  app.post('/api/venues', async (c) => {
+  app.post('/api/venues', verifyAuth, verifyAdmin, async (c) => {
     const body = await c.req.json() as any;
     const { name, location, capacity, description, imageUrl, amenities } = body;
 
@@ -42,7 +42,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, created);
   });
 
-  app.put('/api/venues/:id', async (c) => {
+  app.put('/api/venues/:id', verifyAuth, verifyAdmin, async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json() as any;
 
@@ -63,7 +63,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, await venue.getState());
   });
 
-  app.delete('/api/venues/:id', async (c) => {
+  app.delete('/api/venues/:id', verifyAuth, verifyAdmin, async (c) => {
     const id = c.req.param('id');
 
     const venue = new VenueEntity(c.env, id);
@@ -82,22 +82,38 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
 
   // BOOKINGS
-  app.get('/api/bookings', async (c) => {
+  app.get('/api/bookings', verifyAuth, async (c) => {
     await BookingEntity.ensureSeed(c.env);
-    const userId = c.req.query('userId');
+    const user = c.get('user');
+
+    // If admin, allow viewing all or filtering by userId query
+    // If user, force filtering by their own ID
+
     const list = await BookingEntity.list(c.env);
-    if (userId) {
-      return ok(c, list.items.filter(b => b.userId === userId));
+
+    if (user.role === 'ADMIN') {
+      const userIdParam = c.req.query('userId');
+      if (userIdParam) {
+        return ok(c, list.items.filter(b => b.userId === userIdParam));
+      }
+      return ok(c, list.items);
+    } else {
+      // Regular user: Only see own bookings
+      return ok(c, list.items.filter(b => b.userId === user.sub));
     }
-    return ok(c, list.items);
   });
 
-  app.post('/api/bookings', async (c) => {
+  app.post('/api/bookings', verifyAuth, async (c) => {
     const body = await c.req.json() as Partial<Booking>;
-    const { venueId, userId, date, session, startTime, endTime, purpose, userName } = body;
+    const user = c.get('user');
+    const { venueId, date, session, startTime, endTime, purpose } = body;
 
-    // Validation: Require basic fields + either session OR (startTime AND endTime)
-    if (!venueId || !userId || !date || (!session && (!startTime || !endTime)) || !purpose || !userName) {
+    // Use userId from token, ignore body userId
+    const userId = user.sub;
+    const userName = user.email.split('@')[0]; // Simplify or fetch user details if needed
+
+    // Validation
+    if (!venueId || !date || (!session && (!startTime || !endTime)) || !purpose) {
       return bad(c, 'Missing required booking fields');
     }
 
@@ -111,9 +127,9 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       id: crypto.randomUUID(),
       venueId,
       userId,
-      userName,
+      userName, // TODO: Fetch real name from UserEntity if important
       date,
-      session: session as SessionSlot, // Optional now
+      session: session as SessionSlot,
       startTime,
       endTime,
       status: 'PENDING',
@@ -126,7 +142,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, created);
   });
 
-  app.post('/api/bookings/:id/status', async (c) => {
+  app.post('/api/bookings/:id/status', verifyAuth, verifyAdmin, async (c) => {
     const id = c.req.param('id');
     const { status } = await c.req.json() as { status: string };
     const booking = new BookingEntity(c.env, id);
@@ -140,12 +156,9 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
           const { GoogleDriveService } = await import('./drive');
           const drive = new GoogleDriveService(c.env);
 
-          // documents is an object with keys like approvalLetterUrl, proposalUrl, etc.
           const docUrls = Object.values(bookingData.documents).filter(url => typeof url === 'string') as string[];
 
           for (const docUrl of docUrls) {
-            // Extract ID from /api/images/ID or similar
-            // Our upload returns /api/images/FILE_ID
             const match = docUrl.match(/\/api\/images\/([a-zA-Z0-9-_]+)/);
             if (match && match[1]) {
               console.log(`Deleting rejected file: ${match[1]}`);
@@ -154,7 +167,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
           }
         } catch (err) {
           console.error('Failed to clean up rejected files:', err);
-          // Don't block the status update if cleanup fails
         }
       }
     }
@@ -163,9 +175,9 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, await booking.getState());
   });
 
-  app.delete('/api/bookings/:id', async (c) => {
+  app.delete('/api/bookings/:id', verifyAuth, async (c) => {
     const id = c.req.param('id');
-    const { userId } = c.req.query();
+    const user = c.get('user');
 
     const booking = new BookingEntity(c.env, id);
     if (!await booking.exists()) return notFound(c, 'Booking not found');
@@ -173,7 +185,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const bookingData = await booking.getState();
 
     // Only allow cancellation if user owns the booking or is admin
-    if (userId && bookingData.userId !== userId) {
+    if (user.role !== 'ADMIN' && bookingData.userId !== user.sub) {
       return bad(c, 'Unauthorized: You can only cancel your own bookings');
     }
 
@@ -182,7 +194,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       return bad(c, 'Only pending bookings can be cancelled');
     }
 
-    // Update status to CANCELLED instead of deleting
     await booking.patch({ status: 'CANCELLED' });
     return ok(c, await booking.getState());
   });
@@ -209,7 +220,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
 
   // UPLOADS
-  app.post('/api/upload', async (c) => {
+  app.post('/api/upload', verifyAuth, async (c) => {
     try {
       const body = await c.req.parseBody();
       const file = body['file'];
@@ -221,7 +232,10 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const docType = body['docType'] as string || 'DOC';
       const purpose = body['purpose'] as string || 'UnknownPurpose';
       const date = body['date'] as string || 'UnknownDate';
-      const userName = body['userName'] as string || 'UnknownUser';
+
+      // Use user info from token for filename
+      const user = c.get('user');
+      const userName = user.email.split('@')[0];
 
       // Sanitize filename parts
       const safe = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 30);
@@ -234,8 +248,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const drive = new GoogleDriveService(c.env);
       const result = await drive.uploadFile(file, undefined, customFilename);
 
-      // Return local proxy URL instead of Google URL
-      // This is robust against 3rd party cookie blocking/permissions
       const proxyUrl = `/api/images/${result.id}`;
 
       return ok(c, {
@@ -244,7 +256,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       });
     } catch (err: any) {
       console.error('Upload error:', err);
-      return c.json({ error: err.message }, 500);
+      // Enhanced error handling for common upload issues
+      return c.json({ error: err.message || 'Upload failed' }, 500);
     }
   });
 }

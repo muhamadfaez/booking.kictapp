@@ -80,8 +80,17 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     formData.append('date', meta.date);
     formData.append('userName', meta.userName);
 
+    const token = localStorage.getItem('nexus_token');
+    if (!token) {
+      throw new Error("You are not logged in. Please refresh or login again.");
+    }
+    const headers: HeadersInit = {
+      'Authorization': `Bearer ${token}`
+    };
+
     const res = await fetch('/api/upload', {
       method: 'POST',
+      headers,
       body: formData
     });
     const data = await res.json();
@@ -205,7 +214,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[300px] md:max-w-[650px] p-0 overflow-hidden transition-all duration-300">
+      <DialogContent className="w-[95vw] sm:max-w-[600px] md:max-w-[700px] max-h-[90vh] overflow-y-auto p-0 gap-0 transition-all duration-300">
         <div className="bg-gradient-subtle p-5 border-b border-border/50">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{venue.name}</DialogTitle>

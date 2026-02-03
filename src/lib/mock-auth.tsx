@@ -1,109 +1,78 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, UserRole } from '@shared/types';
-
-// Admin emails that have admin access
-const ADMIN_EMAILS = ['muhamadfaez@iium.edu.my'];
+import { api } from './api-client';
 
 export interface AuthContextType {
   user: User | null;
-  login: (role: UserRole) => void;
-  loginWithEmail: (email: string, name?: string) => User;
-  loginWithGoogle: (email: string, name: string, avatar?: string) => User;
+  loginWithEmail: (email: string) => Promise<string>; // Returns debug code if any, or void
+  verifyOtp: (email: string, code: string, name?: string) => Promise<User>;
+  loginWithGoogle: (email: string, name: string, avatar?: string) => Promise<User>;
   logout: () => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper to determine role based on email
-function getRoleForEmail(email: string): UserRole {
-  return ADMIN_EMAILS.includes(email.toLowerCase()) ? 'ADMIN' : 'USER';
-}
-
-// Generate a unique user ID from email
-function generateUserId(email: string): string {
-  return `user_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem('nexus_user');
-    if (saved) {
+    // Check for token and user on load
+    const token = localStorage.getItem('nexus_token');
+    const savedUser = localStorage.getItem('nexus_user');
+    if (token && savedUser) {
       try {
-        setUser(JSON.parse(saved));
+        setUser(JSON.parse(savedUser));
       } catch {
         localStorage.removeItem('nexus_user');
+        localStorage.removeItem('nexus_token');
       }
     }
     setIsLoading(false);
   }, []);
 
-  // Legacy login by role (for backwards compatibility)
-  const login = (role: UserRole) => {
-    const mockUser: User = role === 'ADMIN'
-      ? {
-        id: 'admin_muhamadfaez',
-        name: 'Muhamad Faez',
-        email: 'muhamadfaez@iium.edu.my',
-        role: 'ADMIN',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin'
-      }
-      : {
-        id: 'user_guest',
-        name: 'Guest User',
-        email: 'guest@example.com',
-        role: 'USER',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Guest'
-      };
-    setUser(mockUser);
-    localStorage.setItem('nexus_user', JSON.stringify(mockUser));
+  const loginWithEmail = async (email: string): Promise<string> => {
+    const res = await api<{ message: string; debugCode?: string }>('/api/auth/otp/request', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+    // For demo purposes, we might return the debug code
+    return res.debugCode || '';
   };
 
-  // Login with email (for email verification flow)
-  const loginWithEmail = (email: string, name?: string): User => {
-    const role = getRoleForEmail(email);
-    const displayName = name || email.split('@')[0];
+  const verifyOtp = async (email: string, code: string, name?: string): Promise<User> => {
+    const res = await api<{ token: string; user: User }>('/api/auth/otp/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, name })
+    });
 
-    const newUser: User = {
-      id: generateUserId(email),
-      name: displayName,
-      email: email.toLowerCase(),
-      role,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`
-    };
-
-    setUser(newUser);
-    localStorage.setItem('nexus_user', JSON.stringify(newUser));
-    return newUser;
+    localStorage.setItem('nexus_token', res.token);
+    localStorage.setItem('nexus_user', JSON.stringify(res.user));
+    setUser(res.user);
+    return res.user;
   };
 
-  // Login with Google OAuth
-  const loginWithGoogle = (email: string, name: string, avatar?: string): User => {
-    const role = getRoleForEmail(email);
+  const loginWithGoogle = async (email: string, name: string, avatar?: string): Promise<User> => {
+    const res = await api<{ token: string; user: User }>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ email, name, avatar })
+    });
 
-    const newUser: User = {
-      id: generateUserId(email),
-      name,
-      email: email.toLowerCase(),
-      role,
-      avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`
-    };
-
-    setUser(newUser);
-    localStorage.setItem('nexus_user', JSON.stringify(newUser));
-    return newUser;
+    localStorage.setItem('nexus_token', res.token);
+    localStorage.setItem('nexus_user', JSON.stringify(res.user));
+    setUser(res.user);
+    return res.user;
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('nexus_user');
+    localStorage.removeItem('nexus_token');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, loginWithEmail, loginWithGoogle, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, loginWithEmail, verifyOtp, loginWithGoogle, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

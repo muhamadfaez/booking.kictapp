@@ -227,7 +227,7 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
 
       {/* Documents Dialog */}
       <Dialog open={!!selectedBookingDocs} onOpenChange={(o) => !o && setSelectedBookingDocs(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Attached Documents</DialogTitle>
             <DialogDescription>

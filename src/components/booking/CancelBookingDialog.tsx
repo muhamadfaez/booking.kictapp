@@ -49,7 +49,7 @@ export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venue
 
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
-            <AlertDialogContent className="sm:max-w-[500px]">
+            <AlertDialogContent className="w-[95vw] sm:max-w-[500px]">
                 <AlertDialogHeader>
                     <div className="flex items-center gap-3 mb-2">
                         <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950 flex items-center justify-center">

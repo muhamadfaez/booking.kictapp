@@ -24,9 +24,9 @@ export function AdminStats({ bookings, venues }: AdminStatsProps) {
       value: pending,
       icon: Timer,
       trend: pending > 0 ? `${pending} awaiting` : 'All clear',
-      gradient: 'from-amber-500 to-orange-600',
-      bgLight: 'bg-amber-50 dark:bg-amber-950/30',
-      iconBg: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      gradient: 'from-emerald-600 to-teal-700',
+      bgLight: 'bg-emerald-50 dark:bg-emerald-950/30',
+      iconBg: 'bg-gradient-to-br from-emerald-600 to-teal-700',
     },
     {
       label: "Approved Today",
@@ -91,7 +91,7 @@ export function AdminStats({ bookings, venues }: AdminStatsProps) {
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-orange-600 rounded-full transition-all duration-500"
+                      className="h-full bg-gradient-to-r from-emerald-600 to-teal-700 rounded-full transition-all duration-500"
                       style={{ width: `${Math.min((pending / Math.max(totalBookings, 1)) * 100, 100)}%` }}
                     />
                   </div>

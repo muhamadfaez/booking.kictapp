@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { VenueCard } from '@/components/booking/VenueCard';
 import { BookingWizard } from '@/components/booking/BookingWizard';
+import { LoginDialog } from '@/components/auth/LoginDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { api } from '@/lib/api-client';
@@ -14,25 +15,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card } from '@/components/ui/card';
 
 export default function LandingPage() {
-  const { login, user } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
 
   const { data: venues, isLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
 
-  const handleLogin = (role: 'USER' | 'ADMIN') => {
-    login(role);
-    navigate('/dashboard');
-  };
-
   const handleBookVenue = (venue: Venue) => {
     if (!user) {
-      // If not logged in, redirect to login page
-      navigate('/login');
+      // If not logged in, show login dialog
+      setShowLoginDialog(true);
       return;
     }
     setSelectedVenue(venue);
@@ -63,7 +60,7 @@ export default function LandingPage() {
             <nav className="flex items-center gap-2">
               <ThemeToggle />
               {!user ? (
-                <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>
+                <Button variant="ghost" size="sm" onClick={() => setShowLoginDialog(true)}>
                   Sign In
                 </Button>
               ) : (
@@ -255,6 +252,12 @@ export default function LandingPage() {
           }}
         />
       )}
+
+      {/* Login Dialog */}
+      <LoginDialog
+        isOpen={showLoginDialog}
+        onClose={() => setShowLoginDialog(false)}
+      />
     </div>
   );
 }

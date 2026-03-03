@@ -7,8 +7,8 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "lint": "eslint --cache -f json --quiet .",
-    "preview": "bun run build && vite preview --host 0.0.0.0 --port 4173",
-    "deploy": "bun run build && wrangler deploy",
+    "preview": "npm run build && vite preview --host 0.0.0.0 --port 4173",
+    "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {

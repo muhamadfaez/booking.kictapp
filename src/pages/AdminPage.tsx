@@ -1,15 +1,21 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { api } from '@/lib/api-client';
-import type { Booking, Venue } from '@shared/types';
+import type { Booking, Venue, AppSettings } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { ShieldCheck, Clock, History, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ShieldCheck, Clock, History, ImageUp } from 'lucide-react';
 
 export default function AdminPage() {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const heroInputRef = useRef<HTMLInputElement | null>(null);
+
   const { data: bookings, isLoading, refetch } = useQuery({
     queryKey: ['all-bookings'],
     queryFn: () => api<Booking[]>('/api/bookings')
@@ -23,10 +29,50 @@ export default function AdminPage() {
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
+  const { data: settings, refetch: refetchSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api<AppSettings>('/api/settings')
+  });
 
   const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
   const pendingBookings = bookings?.filter(b => b.status === 'PENDING') ?? [];
   const historicalBookings = bookings?.filter(b => b.status !== 'PENDING') ?? [];
+
+  const handleHeroUpload = async (file: File) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const token = localStorage.getItem('nexus_token');
+      const form = new FormData();
+      form.append('file', file);
+      form.append('docType', 'HERO');
+      form.append('purpose', 'HeroImage');
+      form.append('date', new Date().toISOString().slice(0, 10));
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Upload failed');
+      }
+
+      const url = json.data?.url as string | undefined;
+      if (!url) throw new Error('Upload did not return a URL');
+
+      await api('/api/settings/hero-image', {
+        method: 'POST',
+        body: JSON.stringify({ heroImageUrl: url })
+      });
+      await refetchSettings();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <AppLayout container>
@@ -50,6 +96,66 @@ export default function AdminPage() {
 
         {/* Stats Grid */}
         <AdminStats bookings={bookings ?? []} venues={venues} />
+
+        {/* Site Settings */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardHeader className="px-6 py-5 border-b border-border/50 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-bold">Site Settings</CardTitle>
+                <CardDescription className="mt-1">
+                  Update the public landing page hero image
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="flex-1">
+                <div className="text-sm font-medium mb-2">Current Hero Image</div>
+                <div className="aspect-[16/6] rounded-xl overflow-hidden border border-border/50 bg-muted">
+                  <img
+                    src={settings?.heroImageUrl || "/images/hero-painting.jpg"}
+                    alt="Hero preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+              <div className="w-full lg:w-80">
+                <div className="text-sm font-medium mb-2">Upload New Image</div>
+                <div className="rounded-xl border border-dashed border-border/70 p-4 space-y-3">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleHeroUpload(file);
+                      e.currentTarget.value = '';
+                    }}
+                    disabled={uploading}
+                    ref={heroInputRef}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2"
+                    disabled={uploading}
+                    onClick={() => {
+                      heroInputRef.current?.click();
+                    }}
+                  >
+                    <ImageUp className="w-4 h-4" />
+                    {uploading ? 'Uploading...' : 'Choose Image'}
+                  </Button>
+                  {uploadError && (
+                    <div className="text-sm text-destructive">{uploadError}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Booking Management */}
         <div className="space-y-4">

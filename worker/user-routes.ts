@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, VenueEntity, BookingEntity } from "./entities";
 import { ok, bad, notFound, isStr, verifyAuth, verifyAdmin } from './core-utils';
-import type { Booking, SessionSlot } from "@shared/types";
+import type { Booking, SessionSlot, AppSettings } from "@shared/types";
 
 export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }>) {
   // SEED INITIAL DATA (Admin Only)
@@ -11,6 +11,34 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     await VenueEntity.ensureSeed(c.env);
     await BookingEntity.ensureSeed(c.env);
     return ok(c, "Seeded");
+  });
+
+  // SETTINGS (Public Read)
+  app.get('/api/settings', async (c) => {
+    const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+    const doc = await globalDO.getDoc<AppSettings>('settings:app');
+    return ok(c, doc?.data ?? {});
+  });
+
+  // SETTINGS (Admin Write)
+  app.post('/api/settings/hero-image', verifyAuth, verifyAdmin, async (c) => {
+    const { heroImageUrl } = await c.req.json() as { heroImageUrl?: string };
+    if (!heroImageUrl || typeof heroImageUrl !== 'string') {
+      return bad(c, 'Missing heroImageUrl');
+    }
+
+    const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+    for (let i = 0; i < 3; i++) {
+      const doc = await globalDO.getDoc<AppSettings>('settings:app');
+      const current = doc?.data ?? {};
+      const version = doc?.v ?? 0;
+
+      const res = await globalDO.casPut('settings:app', version, { ...current, heroImageUrl });
+      if (res.ok) {
+        return ok(c, { heroImageUrl });
+      }
+    }
+    return bad(c, 'Failed to update settings. Please retry.');
   });
 
   // VENUES (Public Read)

@@ -10,7 +10,7 @@ import { LoginDialog } from '@/components/auth/LoginDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { api } from '@/lib/api-client';
-import type { Venue } from '@shared/types';
+import type { Venue, AppSettings } from '@shared/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card } from '@/components/ui/card';
 
@@ -25,6 +25,12 @@ export default function LandingPage() {
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api<AppSettings>('/api/settings')
+  });
+
+  const heroImageUrl = settings?.heroImageUrl || "/images/hero-painting.jpg";
 
   const handleBookVenue = (venue: Venue) => {
     if (!user) {
@@ -77,7 +83,7 @@ export default function LandingPage() {
       {/* Hero Image Section with Overlaid Content */}
       <div className="w-full h-[500px] md:h-[600px] lg:h-[700px] overflow-hidden relative flex items-center justify-center">
         <img
-          src="/images/hero-painting.jpg"
+          src={heroImageUrl}
           alt="Campus Painting"
           className="absolute inset-0 w-full h-full object-cover"
         />

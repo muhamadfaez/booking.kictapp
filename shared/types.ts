@@ -42,6 +42,9 @@ export interface Booking {
     proposalDownloadUrl?: string;
   };
 }
+export interface AppSettings {
+  heroImageUrl?: string;
+}
 export interface Chat {
   id: string;
   title: string;

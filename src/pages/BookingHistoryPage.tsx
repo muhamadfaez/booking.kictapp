@@ -13,6 +13,10 @@ import { History, Search, Filter, Download, RefreshCw } from 'lucide-react';
 export default function BookingHistoryPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
+    const parseLocalDate = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    };
 
     const { data: bookings, isLoading, refetch } = useQuery({
         queryKey: ['all-bookings'],
@@ -49,9 +53,9 @@ export default function BookingHistoryPage() {
         }
 
         // Sort by createdAt (desc) or date (desc)
-        return filtered.sort((a, b) => {
-            const timeA = a.createdAt || new Date(a.date).getTime();
-            const timeB = b.createdAt || new Date(b.date).getTime();
+        return [...filtered].sort((a, b) => {
+            const timeA = a.createdAt || parseLocalDate(a.date).getTime();
+            const timeB = b.createdAt || parseLocalDate(b.date).getTime();
             return timeB - timeA;
         });
     }, [bookings, statusFilter, searchQuery, venueMap]);

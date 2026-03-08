@@ -26,6 +26,10 @@ interface CancelBookingDialogProps {
 
 export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venueMap }: CancelBookingDialogProps) {
     const [isCancelling, setIsCancelling] = React.useState(false);
+    const parseLocalDate = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    };
 
     if (!booking) return null;
 
@@ -78,7 +82,7 @@ export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venue
                         <Calendar className="w-4 h-4 text-muted-foreground" />
                         <div>
                             <p className="text-sm text-muted-foreground">Date</p>
-                            <p className="font-semibold">{format(new Date(booking.date), 'MMMM dd, yyyy')}</p>
+                            <p className="font-semibold">{format(parseLocalDate(booking.date), 'MMMM dd, yyyy')}</p>
                         </div>
                     </div>
 

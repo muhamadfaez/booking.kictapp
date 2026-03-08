@@ -26,7 +26,7 @@ export default function SchedulePage() {
         if (venues && selectedVenues.length === 0) {
             setSelectedVenues(venues.map(v => v.id));
         }
-    }, [venues]);
+    }, [selectedVenues.length, venues]);
 
     // Fetch Bookings for the selected date range
     // Ideally, we fetch a range (e.g., the whole month) to avoid refetching on every day click

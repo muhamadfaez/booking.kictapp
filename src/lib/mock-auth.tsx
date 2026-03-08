@@ -1,12 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { User, UserRole } from '@shared/types';
+import React, { createContext, useState, useEffect } from 'react';
+import type { User } from '@shared/types';
 import { api } from './api-client';
 
 export interface AuthContextType {
   user: User | null;
-  loginWithEmail: (email: string) => Promise<string>; // Returns debug code if any, or void
+  loginWithEmail: (email: string) => Promise<string>;
   verifyOtp: (email: string, code: string, name?: string) => Promise<User>;
-  loginWithGoogle: (email: string, name: string, avatar?: string) => Promise<User>;
+  loginWithGoogle: (accessToken: string) => Promise<User>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -37,7 +37,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ email })
     });
-    // For demo purposes, we might return the debug code
     return res.debugCode || '';
   };
 
@@ -53,10 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return res.user;
   };
 
-  const loginWithGoogle = async (email: string, name: string, avatar?: string): Promise<User> => {
+  const loginWithGoogle = async (accessToken: string): Promise<User> => {
     const res = await api<{ token: string; user: User }>('/api/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ email, name, avatar })
+      body: JSON.stringify({ accessToken })
     });
 
     localStorage.setItem('nexus_token', res.token);

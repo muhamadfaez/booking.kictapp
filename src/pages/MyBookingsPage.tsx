@@ -27,6 +27,10 @@ import { Button } from '@/components/ui/button';
 
 export default function MyBookingsPage() {
   const { user } = useAuth();
+  const parseLocalDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
 
   const { data: bookings, isLoading: bookingsLoading } = useQuery({
     queryKey: ['my-bookings', user?.id],
@@ -148,10 +152,10 @@ export default function MyBookingsPage() {
                     <div className="flex justify-between items-start gap-2">
                       <div className="space-y-1.5">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          {format(new Date(booking.date), 'EEEE')}
+                          {format(parseLocalDate(booking.date), 'EEEE')}
                         </p>
                         <p className="text-lg font-bold text-primary">
-                          {format(new Date(booking.date), 'MMM dd, yyyy')}
+                          {format(parseLocalDate(booking.date), 'MMM dd, yyyy')}
                         </p>
                       </div>
                       <Badge className={`${statusConfig.className} text-[10px] font-bold uppercase px-2.5 py-1`}>

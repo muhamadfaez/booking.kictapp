@@ -25,8 +25,10 @@ export function DashboardHeader() {
     if (path === '/dashboard') return 'Dashboard';
     if (path === '/bookings') return 'My Bookings';
     if (path === '/admin') return 'Admin Console';
+    if (path.includes('/admin/users')) return 'Users';
     if (path.includes('/admin/venues')) return 'Venue Management';
     if (path.includes('/admin/history')) return 'History';
+    if (path.includes('/admin/settings')) return 'Settings';
     return 'Dashboard';
   };
 

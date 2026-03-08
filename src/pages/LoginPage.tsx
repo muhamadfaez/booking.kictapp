@@ -8,11 +8,12 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
 import { useGoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
-import axios from 'axios';
+import { useAppSettings } from '@/hooks/useAppSettings';
 
 export default function LoginPage() {
     const navigate = useNavigate();
     const { loginWithEmail, loginWithGoogle, verifyOtp } = useAuth();
+    const { settings } = useAppSettings();
     const [email, setEmail] = useState('');
     const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
     const [showVerification, setShowVerification] = useState(false);
@@ -25,20 +26,8 @@ export default function LoginPage() {
     const handleGoogleSignIn = useGoogleLogin({
         onSuccess: async (tokenResponse) => {
             try {
-                // Get user info from Google
-                const userInfo = await axios.get(
-                    'https://www.googleapis.com/oauth2/v3/userinfo',
-                    {
-                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-                    }
-                );
-
-                const { email, name, picture } = userInfo.data;
-
-                // Login with real Google data via backend
-                const user = await loginWithGoogle(email, name, picture);
-
-                toast.success(`Welcome, ${name}!`);
+                const user = await loginWithGoogle(tokenResponse.access_token);
+                toast.success(`Welcome, ${user.name}!`);
 
                 // Redirect based on role
                 if (user.role === 'ADMIN') {
@@ -57,6 +46,8 @@ export default function LoginPage() {
         }
     });
 
+    const handleGoogleButtonClick = () => handleGoogleSignIn();
+
     const handleEmailSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!email.trim()) {
@@ -72,16 +63,15 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            // Request OTP from backend
             const debugCode = await loginWithEmail(email);
             setSentCode(debugCode);
 
             setIsLoading(false);
             setShowVerification(true);
-            setShowCodeSentMessage(true);
-
-            // Hide the code message after 15 seconds
-            setTimeout(() => setShowCodeSentMessage(false), 15000);
+            setShowCodeSentMessage(!!debugCode);
+            if (debugCode) {
+                setTimeout(() => setShowCodeSentMessage(false), 30000);
+            }
 
             toast.success("Verification code sent!");
         } catch (err: any) {
@@ -165,8 +155,10 @@ export default function LoginPage() {
             setSentCode(debugCode);
 
             setIsLoading(false);
-            setShowCodeSentMessage(true);
-            setTimeout(() => setShowCodeSentMessage(false), 15000);
+            setShowCodeSentMessage(!!debugCode);
+            if (debugCode) {
+                setTimeout(() => setShowCodeSentMessage(false), 30000);
+            }
 
             toast.success("Code resent!");
         } catch (err: any) {
@@ -190,8 +182,8 @@ export default function LoginPage() {
                                 <Building2 className="h-5 w-5 text-white" />
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-lg font-bold tracking-tight">BookingTrack</span>
-                                <span className="text-[10px] text-muted-foreground hidden sm:block">Professional Venue Management</span>
+                                <span className="text-lg font-bold tracking-tight">{settings.appName}</span>
+                                <span className="text-[10px] text-muted-foreground hidden sm:block">{settings.appLabel}</span>
                             </div>
                         </button> */}
                         <ThemeToggle />
@@ -208,7 +200,7 @@ export default function LoginPage() {
                             <Building2 className="w-10 h-10 text-primary" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-gradient">IIUM Community</h1>
+                            <h1 className="text-3xl font-bold tracking-tight text-gradient">{settings.appName}</h1>
                             <p className="text-muted-foreground mt-2">Sign in to access venue booking</p>
                         </div>
                     </div>
@@ -218,7 +210,7 @@ export default function LoginPage() {
                         {/* Google Sign In */}
                         <div className="space-y-4">
                             <Button
-                                onClick={() => handleGoogleSignIn()}
+                                onClick={handleGoogleButtonClick}
                                 disabled={isLoading}
                                 className="w-full h-12 text-base font-medium bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 shadow-sm rounded-xl transition-all duration-300 hover:shadow-md dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
                             >
@@ -273,9 +265,6 @@ export default function LoginPage() {
                                             autoComplete="email"
                                         />
                                     </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Admin access: <span className="font-mono text-primary">muhamadfaez@iium.edu.my</span>
-                                    </p>
                                 </div>
                                 {error && (
                                     <p className="text-sm text-destructive">{error}</p>
@@ -314,15 +303,13 @@ export default function LoginPage() {
                                         We sent a code to <span className="font-medium text-foreground">{email}</span>
                                     </p>
                                 </div>
-
-                                {/* Show verification code for demo purposes */}
                                 {showCodeSentMessage && sentCode && (
                                     <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                                         <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                                         <div className="text-sm">
-                                            <p className="font-medium text-emerald-800 dark:text-emerald-200">Demo Mode</p>
+                                            <p className="font-medium text-emerald-800 dark:text-emerald-200">Temporary OTP Code</p>
                                             <p className="text-emerald-700 dark:text-emerald-300">
-                                                Your code is: <span className="font-mono font-bold">{sentCode}</span>
+                                                Use this code: <span className="font-mono font-bold">{sentCode}</span>
                                             </p>
                                         </div>
                                     </div>

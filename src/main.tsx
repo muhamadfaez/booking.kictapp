@@ -2,7 +2,7 @@ import '@/lib/errorReporter';
 import { enableMapSet } from "immer";
 import { Toaster } from "sonner";
 enableMapSet();
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   createBrowserRouter,
@@ -18,6 +18,8 @@ import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import AdminPage from '@/pages/AdminPage'
+import AdminUsersPage from '@/pages/AdminUsersPage'
+import AdminSettingsPage from '@/pages/AdminSettingsPage'
 import VenueManagementPage from '@/pages/VenueManagementPage'
 import BookingHistoryPage from '@/pages/BookingHistoryPage'
 import SchedulePage from '@/pages/SchedulePage'
@@ -25,7 +27,7 @@ import { AuthProvider } from '@/lib/mock-auth'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 
 const queryClient = new QueryClient();
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 const router = createBrowserRouter([
   {
@@ -91,12 +93,50 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin/users",
+    element: (
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminUsersPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin/settings",
+    element: (
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminSettingsPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
   }
 ]);
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <GoogleOAuthProvider clientId={googleClientId}>
+export function AppProviders() {
+  const [googleClientId, setGoogleClientId] = useState(buildGoogleClientId);
+
+  useEffect(() => {
+    if (buildGoogleClientId) return;
+    let mounted = true;
+    fetch('/api/public-config')
+      .then((res) => res.json())
+      .then((json: { success?: boolean; data?: { googleClientId?: string } }) => {
+        const runtimeId = (json?.data?.googleClientId || '').trim();
+        if (mounted && runtimeId) setGoogleClientId(runtimeId);
+      })
+      .catch(() => {
+        // Keep fallback behavior; login screen will show API-driven error if not configured.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return (
+    <GoogleOAuthProvider clientId={googleClientId || 'disabled-client-id.apps.googleusercontent.com'}>
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <AuthProvider>
@@ -106,5 +146,11 @@ createRoot(document.getElementById('root')!).render(
         </ErrorBoundary>
       </QueryClientProvider>
     </GoogleOAuthProvider>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <AppProviders />
   </StrictMode>,
 )

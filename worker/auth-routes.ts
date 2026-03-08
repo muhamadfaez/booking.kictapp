@@ -1,17 +1,45 @@
 import { Hono } from "hono";
 import { sign } from 'hono/jwt';
 import type { Env } from './core-utils';
-import { ok, bad, notFound } from './core-utils';
+import { ok, bad } from './core-utils';
 import { UserEntity } from "./entities";
 import type { User, UserRole } from "@shared/types";
 import { GoogleMailService } from './mail';
+import { recordSignIn } from './signin-tracker';
 
 
 // Helper to generate a 6-digit numeric code
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
 
-// Admin emails hardcoded for security bootstrap (same as frontend)
-const ADMIN_EMAILS = ['muhamadfaez@iium.edu.my'];
+type OtpRecord = {
+    code: string;
+    expiresAt: number;
+    attempts: number;
+};
+
+function getAdminEmails(env: Env): Set<string> {
+    const raw = ((env as any).ADMIN_EMAILS as string | undefined) || '';
+    return new Set(
+        raw
+            .split(',')
+            .map((email) => email.trim().toLowerCase())
+            .filter(Boolean)
+    );
+}
+
+function resolveRole(currentRole: UserRole | undefined, email: string, adminEmails: Set<string>): UserRole {
+    if (adminEmails.has(email)) return 'ADMIN';
+    return currentRole ?? 'USER';
+}
+
+async function requireJwtSecret(env: Env): Promise<string> {
+    if (!env.JWT_SECRET || env.JWT_SECRET.trim().length < 32) {
+        throw new Error('JWT_SECRET is missing or too short');
+    }
+    return env.JWT_SECRET;
+}
 
 export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }>) {
 
@@ -26,10 +54,22 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         // Store in GlobalDurableObject with expiration (e.g., 5 minutes)
         // Key: otp:<email> -> { code, expiresAt }
         const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
-        await globalDO.casPut(`otp:${cleanEmail}`, 0, {
-            code,
-            expiresAt: Date.now() + 5 * 60 * 1000
-        });
+        const otpKey = `otp:${cleanEmail}`;
+        let stored = false;
+        for (let i = 0; i < 4; i++) {
+            const current = await globalDO.getDoc<OtpRecord>(otpKey);
+            const version = current?.v ?? 0;
+            const result = await globalDO.casPut(otpKey, version, {
+                code,
+                expiresAt: Date.now() + OTP_TTL_MS,
+                attempts: 0
+            });
+            if (result.ok) {
+                stored = true;
+                break;
+            }
+        }
+        if (!stored) return bad(c, 'Failed to create OTP. Please retry.');
 
         // SEND EMAIL
         try {
@@ -50,7 +90,12 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             console.log(`[AUTH] Email sent to ${cleanEmail}`);
         } catch (err: any) {
             console.error('[AUTH] Failed to send email:', err);
-            return bad(c, 'Failed to send verification email. Please contact support.');
+            // Fallback: keep OTP flow usable when mail provider is temporarily unavailable.
+            // debugCode is returned only in this degraded path.
+            return ok(c, {
+                message: 'OTP generated, but email delivery is unavailable. Use temporary code.',
+                debugCode: code
+            });
         }
 
         return ok(c, { message: 'OTP sent' });
@@ -62,29 +107,45 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         if (!email || !code) return bad(c, 'Missing email or code');
 
         const cleanEmail = email.toLowerCase().trim();
+        const adminEmails = getAdminEmails(c.env);
 
         // Verify Code
         const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
-        const doc = await globalDO.getDoc(`otp:${cleanEmail}`) as any;
+        const otpKey = `otp:${cleanEmail}`;
+        const doc = await globalDO.getDoc<OtpRecord>(otpKey);
 
         if (!doc || !doc.data) return bad(c, 'Invalid or expired OTP request');
 
-        const { code: storedCode, expiresAt } = doc.data;
-        if (Date.now() > expiresAt) return bad(c, 'OTP expired');
-        if (storedCode !== code) return bad(c, 'Invalid OTP');
+        const { code: storedCode, expiresAt, attempts } = doc.data;
+        if (Date.now() > expiresAt) {
+            await globalDO.del(otpKey);
+            return bad(c, 'OTP expired');
+        }
+        if (attempts >= OTP_MAX_ATTEMPTS) {
+            await globalDO.del(otpKey);
+            return bad(c, 'Too many invalid attempts. Request a new code.');
+        }
+        if (storedCode !== code) {
+            await globalDO.casPut(otpKey, doc.v, {
+                code: storedCode,
+                expiresAt,
+                attempts: attempts + 1
+            });
+            return bad(c, 'Invalid OTP');
+        }
 
         // Consume OTP
-        await globalDO.del(`otp:${cleanEmail}`);
+        await globalDO.del(otpKey);
 
         // Create/Update User
         const id = `user_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-        const role: UserRole = ADMIN_EMAILS.includes(cleanEmail) ? 'ADMIN' : 'USER';
 
         const userEntity = new UserEntity(c.env, id);
         let userData = await userEntity.getState();
 
         if (!userData.id || userData.id !== id) {
             // New User
+            const role = resolveRole(undefined, cleanEmail, adminEmails);
             const newUser: User = {
                 id,
                 email: cleanEmail,
@@ -95,6 +156,7 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             await UserEntity.create(c.env, newUser);
             userData = newUser;
         } else {
+            const role = resolveRole(userData.role, cleanEmail, adminEmails);
             if (userData.role !== role) {
                 await userEntity.patch({ role });
                 userData.role = role;
@@ -109,24 +171,57 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
         };
 
-        const token = await sign(payload, c.env.JWT_SECRET || 'dev-secret-fallback');
+        const jwtSecret = await requireJwtSecret(c.env);
+        const token = await sign(payload, jwtSecret);
+
+        try {
+            await recordSignIn(c.env, {
+                userId: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                method: 'OTP',
+                signedInAt: Date.now()
+            });
+        } catch (err) {
+            console.error('[AUTH] Failed to record OTP sign-in:', err);
+        }
 
         return ok(c, { token, user: userData });
     });
 
     // 3. Google Login Exchange
     app.post('/api/auth/google', async (c) => {
-        const { email, name, avatar } = await c.req.json() as { email: string; name: string; avatar?: string };
-        if (!email) return bad(c, 'Missing email');
-        const cleanEmail = email.toLowerCase().trim();
+        const { accessToken } = await c.req.json() as { accessToken?: string };
+        if (!accessToken) return bad(c, 'Missing Google access token');
+
+        const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (!googleRes.ok) return bad(c, 'Invalid Google token');
+
+        const googleUser = await googleRes.json() as {
+            email?: string;
+            name?: string;
+            picture?: string;
+            email_verified?: boolean | string;
+        };
+        if (!googleUser.email) return bad(c, 'Google account has no email');
+        const emailVerified = googleUser.email_verified === true || googleUser.email_verified === 'true';
+        if (!emailVerified) return bad(c, 'Google email is not verified');
+
+        const cleanEmail = googleUser.email.toLowerCase().trim();
+        const name = googleUser.name;
+        const avatar = googleUser.picture;
+        const adminEmails = getAdminEmails(c.env);
 
         const id = `user_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-        const role: UserRole = ADMIN_EMAILS.includes(cleanEmail) ? 'ADMIN' : 'USER';
 
         const userEntity = new UserEntity(c.env, id);
         let userData = await userEntity.getState();
 
         if (!userData.id || userData.id !== id) {
+            const role = resolveRole(undefined, cleanEmail, adminEmails);
             const newUser: User = {
                 id,
                 email: cleanEmail,
@@ -139,6 +234,8 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         } else {
             // Update existing user info if changed
             const updates: any = {};
+            const role = resolveRole(userData.role, cleanEmail, adminEmails);
+            if (userData.role !== role) updates.role = role;
             if (name && userData.name !== name) updates.name = name;
             if (avatar && userData.avatar !== avatar) updates.avatar = avatar;
 
@@ -155,7 +252,21 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
         };
 
-        const token = await sign(payload, c.env.JWT_SECRET || 'dev-secret-fallback');
+        const jwtSecret = await requireJwtSecret(c.env);
+        const token = await sign(payload, jwtSecret);
+
+        try {
+            await recordSignIn(c.env, {
+                userId: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                method: 'GOOGLE',
+                signedInAt: Date.now()
+            });
+        } catch (err) {
+            console.error('[AUTH] Failed to record Google sign-in:', err);
+        }
 
         return ok(c, { token, user: userData });
     });

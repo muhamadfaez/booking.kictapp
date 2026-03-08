@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, Users, MapPin, Building2, Search, Filter, ArrowRight, Clock, Shield } from 'lucide-react';
@@ -10,27 +10,41 @@ import { LoginDialog } from '@/components/auth/LoginDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { api } from '@/lib/api-client';
-import type { Venue, AppSettings } from '@shared/types';
+import type { Venue, SessionSlot } from '@shared/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { format } from 'date-fns';
+import { useAppSettings } from '@/hooks/useAppSettings';
+
+type AvailabilityResult = {
+  availableVenueIds: string[];
+  unavailableVenueIds: string[];
+};
 
 export default function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedSession, setSelectedSession] = useState<SessionSlot>('MORNING');
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const { settings } = useAppSettings();
 
   const { data: venues, isLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api<AppSettings>('/api/settings')
+  const { data: availability } = useQuery({
+    queryKey: ['venues-availability', selectedDate, selectedSession],
+    queryFn: () =>
+      api<AvailabilityResult>(
+        `/api/venues/availability?date=${encodeURIComponent(selectedDate)}&session=${encodeURIComponent(selectedSession)}`
+      )
   });
 
-  const heroImageUrl = settings?.heroImageUrl || "/images/hero-painting.jpg";
+  const heroImageUrl = settings.heroImageUrl || "/images/hero-painting.jpg";
 
   const handleBookVenue = (venue: Venue) => {
     if (!user) {
@@ -41,10 +55,12 @@ export default function LandingPage() {
     setSelectedVenue(venue);
   };
 
-  const filteredVenues = venues?.filter(venue =>
-    venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    venue.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    venue.description.toLowerCase().includes(searchQuery.toLowerCase())
+  const availableSet = useMemo(() => new Set(availability?.availableVenueIds ?? []), [availability?.availableVenueIds]);
+  const filteredVenues = venues?.filter((venue) =>
+    (venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      venue.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      venue.description.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    (availableSet.size === 0 || availableSet.has(venue.id))
   );
 
   return (
@@ -55,11 +71,15 @@ export default function LandingPage() {
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 shadow-md">
-                <Building2 className="h-5 w-5 text-white" />
+                {settings.appIconUrl ? (
+                  <img src={settings.appIconUrl} alt={settings.appName} className="h-full w-full object-cover rounded-lg" />
+                ) : (
+                  <Building2 className="h-5 w-5 text-white" />
+                )}
               </div>
               <div className="flex flex-col">
-                <span className="text-lg font-bold tracking-tight">BookingTrack</span>
-                <span className="text-[10px] text-muted-foreground hidden sm:block">Professional Venue Management</span>
+                <span className="text-lg font-bold tracking-tight">{settings.appName}</span>
+                <span className="text-[10px] text-muted-foreground hidden sm:block">{settings.appLabel}</span>
               </div>
             </div>
 
@@ -150,6 +170,25 @@ export default function LandingPage() {
             </Button>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+            <Select value={selectedSession} onValueChange={(v) => setSelectedSession(v as SessionSlot)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select session" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MORNING">Morning (08:00 - 12:00)</SelectItem>
+                <SelectItem value="AFTERNOON">Afternoon (13:00 - 17:00)</SelectItem>
+                <SelectItem value="EVENING">Evening (18:00 - 22:00)</SelectItem>
+                <SelectItem value="FULL_DAY">Full Day (08:00 - 22:00)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Venue Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {isLoading ? (
@@ -234,7 +273,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                &copy; 2024 BookingTrack. Professional Venue Management.
+                &copy; 2024 {settings.appName}. {settings.appLabel}.
               </span>
             </div>
             <div className="flex gap-6 text-sm text-muted-foreground">

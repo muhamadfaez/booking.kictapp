@@ -34,6 +34,10 @@ interface BookingRequestTableProps {
 export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venueMap }: BookingRequestTableProps) {
   const [processingId, setProcessingId] = React.useState<string | null>(null);
   const [selectedBookingDocs, setSelectedBookingDocs] = useState<Booking | null>(null);
+  const parseLocalDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
 
   const handleStatusUpdate = async (id: string, status: 'APPROVED' | 'REJECTED') => {
     setProcessingId(id);
@@ -147,7 +151,7 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
                       </div>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Calendar className="h-3.5 w-3.5" />
-                        <span>{format(new Date(booking.date), 'MMM dd')}</span>
+                        <span>{format(parseLocalDate(booking.date), 'MMM dd')}</span>
                         <span className="text-muted-foreground/50">•</span>
                         <span>{booking.startTime && booking.endTime ? `${booking.startTime}-${booking.endTime}` : (booking.session?.replace('_', ' ') || 'N/A')}</span>
                       </div>

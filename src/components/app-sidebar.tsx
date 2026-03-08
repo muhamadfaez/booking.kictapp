@@ -6,6 +6,8 @@ import {
   ShieldCheck,
   Settings,
   History,
+  Users,
+  Globe,
   LogOut,
   User as UserIcon,
   Sparkles,
@@ -26,17 +28,21 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { useAppSettings } from "@/hooks/useAppSettings";
 
 export function AppSidebar(): JSX.Element {
   const { user, logout } = useAuth();
   const location = useLocation();
   const isAdmin = user?.role === 'ADMIN';
+  const { settings } = useAppSettings();
 
   const navItems = isAdmin ? [
     { title: "Admin Console", icon: ShieldCheck, href: "/admin" },
+    { title: "User", icon: Users, href: "/admin/users" },
     { title: "Venue Management", icon: Building2, href: "/admin/venues" },
     { title: "Global Schedule", icon: CalendarDays, href: "/schedule" },
     { title: "Global History", icon: History, href: "/admin/history" },
+    { title: "Live Site", icon: Globe, href: "/" },
   ] : [
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { title: "Schedule", icon: CalendarDays, href: "/schedule" },
@@ -48,11 +54,15 @@ export function AppSidebar(): JSX.Element {
       <SidebarHeader className="p-4 group-data-[collapsible=icon]:p-2 transition-all">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 transition-all">
-            <Sparkles className="h-5 w-5 text-white" />
+            {settings.appIconUrl ? (
+              <img src={settings.appIconUrl} alt={settings.appName} className="h-full w-full object-cover rounded-xl" />
+            ) : (
+              <Sparkles className="h-5 w-5 text-white" />
+            )}
           </div>
           <div className="flex flex-col truncate group-data-[collapsible=icon]:hidden">
-            <span className="text-base font-bold leading-none tracking-tight">BookingTrack</span>
-            <span className="text-xs text-muted-foreground mt-1">Venue Management</span>
+            <span className="text-base font-bold leading-none tracking-tight">{settings.appName}</span>
+            <span className="text-xs text-muted-foreground mt-1">{settings.appLabel}</span>
           </div>
         </div>
       </SidebarHeader>
@@ -91,21 +101,29 @@ export function AppSidebar(): JSX.Element {
           </SidebarMenu>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-4" />
+        {isAdmin && (
+          <>
+            <SidebarSeparator className="my-4" />
 
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Settings"
-                className="h-11 rounded-xl hover:bg-muted/80 transition-all duration-200"
-              >
-                <Settings className="size-5 text-muted-foreground" />
-                <span className="group-data-[collapsible=icon]:hidden">Settings</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/admin/settings'}
+                    tooltip="Settings"
+                    className="h-11 rounded-xl hover:bg-muted/80 transition-all duration-200"
+                  >
+                    <Link to="/admin/settings" className="flex items-center gap-3">
+                      <Settings className="size-5 text-muted-foreground" />
+                      <span className="group-data-[collapsible=icon]:hidden">Settings</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-3 group-data-[collapsible=icon]:p-2">

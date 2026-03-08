@@ -5,18 +5,35 @@ import { VenueCard } from '@/components/booking/VenueCard';
 import { BookingWizard } from '@/components/booking/BookingWizard';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
-import type { Venue, Booking } from '@shared/types';
+import type { Venue, Booking, SessionSlot } from '@shared/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CalendarDays, Clock, CheckCircle2, Timer, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+type AvailabilityResult = {
+  availableVenueIds: string[];
+  unavailableVenueIds: string[];
+};
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedSession, setSelectedSession] = useState<SessionSlot>('MORNING');
   const { data: venues, isLoading: venuesLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
+  });
+  const { data: availability } = useQuery({
+    queryKey: ['dashboard-venues-availability', selectedDate, selectedSession],
+    queryFn: () =>
+      api<AvailabilityResult>(
+        `/api/venues/availability?date=${encodeURIComponent(selectedDate)}&session=${encodeURIComponent(selectedSession)}`
+      )
   });
   const { data: bookings, isLoading: bookingsLoading, refetch: refetchBookings } = useQuery({
     queryKey: ['my-bookings', user?.id],
@@ -31,6 +48,10 @@ export default function DashboardPage() {
       default: return null;
     }
   };
+
+  const availableVenueIds = new Set(availability?.availableVenueIds ?? []);
+  const availableVenues = (venues ?? []).filter((v) => availableVenueIds.size === 0 || availableVenueIds.has(v.id));
+
   return (
     <AppLayout container>
       <div className="space-y-10">
@@ -83,11 +104,25 @@ export default function DashboardPage() {
         </section>
         <section className="space-y-4">
           <h2 className="text-xl font-semibold">Available Venues</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+            <Select value={selectedSession} onValueChange={(v) => setSelectedSession(v as SessionSlot)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select session" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MORNING">Morning (08:00 - 12:00)</SelectItem>
+                <SelectItem value="AFTERNOON">Afternoon (13:00 - 17:00)</SelectItem>
+                <SelectItem value="EVENING">Evening (18:00 - 22:00)</SelectItem>
+                <SelectItem value="FULL_DAY">Full Day (08:00 - 22:00)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {venuesLoading ? (
               [1, 2, 3].map(i => <Skeleton key={i} className="h-[300px] w-full" />)
             ) : (
-              venues?.map(venue => (
+              availableVenues.map(venue => (
                 <VenueCard 
                   key={venue.id} 
                   venue={venue} 

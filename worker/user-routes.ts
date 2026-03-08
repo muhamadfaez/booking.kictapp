@@ -1,12 +1,113 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, VenueEntity, BookingEntity } from "./entities";
-import { ok, bad, notFound, isStr, verifyAuth, verifyAdmin } from './core-utils';
-import type { Booking, SessionSlot, AppSettings } from "@shared/types";
+import { ok, bad, notFound } from './core-utils';
+import type { Booking, SessionSlot, AppSettings, BookingStatus } from "@shared/types";
+import { verify } from 'hono/jwt';
+import { getRecentSignIns } from './signin-tracker';
+
+const verifyAuthStrict = async (c: any, next: any) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return c.json({ success: false, error: 'Unauthorized' }, 401);
+  }
+
+  if (!c.env.JWT_SECRET || c.env.JWT_SECRET.trim().length < 32) {
+    return c.json({ success: false, error: 'Server auth configuration error' }, 500);
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
+    c.set('user', payload);
+    await next();
+  } catch {
+    return c.json({ success: false, error: 'Invalid Token' }, 401);
+  }
+};
+
+const verifyAdminStrict = async (c: any, next: any) => {
+  const user = c.get('user');
+  if (!user || user.role !== 'ADMIN') {
+    return c.json({ success: false, error: 'Forbidden: Admin access required' }, 403);
+  }
+  await next();
+};
+
+const BOOKING_LOCK_TTL_MS = 5000;
+const BOOKING_LOCK_MAX_RETRIES = 10;
+const BOOKING_LOCK_RETRY_DELAY_MS = 60;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_DOC_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toMins = (time: string) => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const sessionRange = (session?: SessionSlot): [number, number] | null => {
+  switch (session) {
+    case 'MORNING': return [480, 720];
+    case 'AFTERNOON': return [780, 1020];
+    case 'EVENING': return [1080, 1320];
+    case 'FULL_DAY': return [480, 1320];
+    default: return null;
+  }
+};
+
+const bookingRange = (startTime?: string, endTime?: string, session?: SessionSlot): [number, number] | null => {
+  if (startTime && endTime) return [toMins(startTime), toMins(endTime)];
+  return sessionRange(session);
+};
+
+async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () => Promise<T>): Promise<T> {
+  const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+  const lockKey = `lock:booking:${venueId}:${date}`;
+  const ownerToken = crypto.randomUUID();
+  let acquired = false;
+
+  for (let attempt = 0; attempt < BOOKING_LOCK_MAX_RETRIES; attempt++) {
+    const now = Date.now();
+    const doc = await globalDO.getDoc<{ token: string; expiresAt: number }>(lockKey);
+    const currentVersion = doc?.v ?? 0;
+    const currentData = doc?.data;
+
+    if (!currentData || currentData.expiresAt <= now) {
+      const lockResult = await globalDO.casPut(lockKey, currentVersion, {
+        token: ownerToken,
+        expiresAt: now + BOOKING_LOCK_TTL_MS
+      });
+      if (lockResult.ok) {
+        acquired = true;
+        break;
+      }
+    }
+    await sleep(BOOKING_LOCK_RETRY_DELAY_MS);
+  }
+
+  if (!acquired) {
+    throw new Error('Could not acquire booking lock');
+  }
+
+  try {
+    return await fn();
+  } finally {
+    const doc = await globalDO.getDoc<{ token: string; expiresAt: number }>(lockKey);
+    if (doc?.data?.token === ownerToken) {
+      await globalDO.casPut(lockKey, doc.v, { token: 'released', expiresAt: 0 });
+    }
+  }
+}
 
 export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }>) {
   // SEED INITIAL DATA (Admin Only)
-  app.get('/api/init', verifyAuth, verifyAdmin, async (c) => {
+  app.get('/api/init', verifyAuthStrict, verifyAdminStrict, async (c) => {
     await UserEntity.ensureSeed(c.env);
     await VenueEntity.ensureSeed(c.env);
     await BookingEntity.ensureSeed(c.env);
@@ -21,7 +122,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   });
 
   // SETTINGS (Admin Write)
-  app.post('/api/settings/hero-image', verifyAuth, verifyAdmin, async (c) => {
+  app.post('/api/settings/hero-image', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const { heroImageUrl } = await c.req.json() as { heroImageUrl?: string };
     if (!heroImageUrl || typeof heroImageUrl !== 'string') {
       return bad(c, 'Missing heroImageUrl');
@@ -41,6 +142,25 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     return bad(c, 'Failed to update settings. Please retry.');
   });
 
+  app.post('/api/settings/branding', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const { appName, appLabel, appIconUrl } = await c.req.json() as AppSettings;
+    const updates: AppSettings = {};
+
+    if (appName !== undefined) updates.appName = String(appName).trim();
+    if (appLabel !== undefined) updates.appLabel = String(appLabel).trim();
+    if (appIconUrl !== undefined) updates.appIconUrl = String(appIconUrl).trim();
+
+    const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+    for (let i = 0; i < 3; i++) {
+      const doc = await globalDO.getDoc<AppSettings>('settings:app');
+      const current = doc?.data ?? {};
+      const version = doc?.v ?? 0;
+      const res = await globalDO.casPut('settings:app', version, { ...current, ...updates });
+      if (res.ok) return ok(c, { ...current, ...updates });
+    }
+    return bad(c, 'Failed to update branding settings. Please retry.');
+  });
+
   // VENUES (Public Read)
   app.get('/api/venues', async (c) => {
     await VenueEntity.ensureSeed(c.env);
@@ -48,7 +168,49 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     return ok(c, list.items);
   });
 
-  app.post('/api/venues', verifyAuth, verifyAdmin, async (c) => {
+  app.get('/api/venues/availability', async (c) => {
+    const date = c.req.query('date');
+    const session = c.req.query('session') as SessionSlot | undefined;
+    const startTime = c.req.query('startTime') || undefined;
+    const endTime = c.req.query('endTime') || undefined;
+
+    if (!date) return bad(c, 'Missing date');
+    const requestedRange = bookingRange(startTime, endTime, session);
+    if (!requestedRange) return bad(c, 'Missing time selection');
+
+    await VenueEntity.ensureSeed(c.env);
+    const venues = await VenueEntity.list(c.env);
+    const bookings = await BookingEntity.list(c.env);
+
+    const unavailableVenueIds = new Set<string>();
+    const [reqStart, reqEnd] = requestedRange;
+
+    for (const b of bookings.items) {
+      if (b.date !== date) continue;
+      if (b.status === 'CANCELLED' || b.status === 'REJECTED') continue;
+      const existingRange = bookingRange(b.startTime, b.endTime, b.session);
+      if (!existingRange) continue;
+      const [existStart, existEnd] = existingRange;
+      if (reqStart < existEnd && reqEnd > existStart) {
+        unavailableVenueIds.add(b.venueId);
+      }
+    }
+
+    const availableVenueIds = venues.items
+      .filter((v) => !unavailableVenueIds.has(v.id))
+      .map((v) => v.id);
+
+    return ok(c, {
+      date,
+      session: session ?? null,
+      startTime: startTime ?? null,
+      endTime: endTime ?? null,
+      availableVenueIds,
+      unavailableVenueIds: Array.from(unavailableVenueIds)
+    });
+  });
+
+  app.post('/api/venues', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const body = await c.req.json() as any;
     const { name, location, capacity, description, imageUrl, amenities } = body;
 
@@ -70,7 +232,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     return ok(c, created);
   });
 
-  app.put('/api/venues/:id', verifyAuth, verifyAdmin, async (c) => {
+  app.put('/api/venues/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json() as any;
 
@@ -91,7 +253,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     return ok(c, await venue.getState());
   });
 
-  app.delete('/api/venues/:id', verifyAuth, verifyAdmin, async (c) => {
+  app.delete('/api/venues/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const id = c.req.param('id');
 
     const venue = new VenueEntity(c.env, id);
@@ -110,28 +272,63 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   });
 
   // BOOKINGS
-  app.get('/api/bookings', verifyAuth, async (c) => {
+  app.get('/api/bookings', verifyAuthStrict, async (c) => {
     await BookingEntity.ensureSeed(c.env);
     const user = c.get('user');
+    const statusQuery = c.req.query('status');
+    const requestedStatus = statusQuery as BookingStatus | undefined;
+    const allowedStatuses: BookingStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'];
+    const hasValidStatusFilter = requestedStatus ? allowedStatuses.includes(requestedStatus) : false;
 
     // If admin, allow viewing all or filtering by userId query
     // If user, force filtering by their own ID
 
     const list = await BookingEntity.list(c.env);
+    const statusFiltered = hasValidStatusFilter ? list.items.filter(b => b.status === requestedStatus) : list.items;
 
     if (user.role === 'ADMIN') {
       const userIdParam = c.req.query('userId');
       if (userIdParam) {
-        return ok(c, list.items.filter(b => b.userId === userIdParam));
+        return ok(c, statusFiltered.filter(b => b.userId === userIdParam));
       }
-      return ok(c, list.items);
+      return ok(c, statusFiltered);
     } else {
       // Regular user: Only see own bookings
-      return ok(c, list.items.filter(b => b.userId === user.sub));
+      return ok(c, statusFiltered.filter(b => b.userId === user.sub));
     }
   });
 
-  app.post('/api/bookings', verifyAuth, async (c) => {
+  // ADMIN USER ROLE MANAGEMENT
+  app.get('/api/admin/users', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    await UserEntity.ensureSeed(c.env);
+    const users = await UserEntity.list(c.env);
+    return ok(c, users.items);
+  });
+
+  app.post('/api/admin/users/:id/role', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const id = c.req.param('id');
+    const { role } = await c.req.json() as { role?: 'USER' | 'ADMIN' };
+    if (!role || (role !== 'USER' && role !== 'ADMIN')) {
+      return bad(c, 'Role must be USER or ADMIN');
+    }
+
+    const user = new UserEntity(c.env, id);
+    if (!await user.exists()) return notFound(c, 'User not found');
+
+    await user.patch({ role });
+    return ok(c, await user.getState());
+  });
+
+  app.get('/api/admin/signins-24h', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const items = await getRecentSignIns(c.env);
+    return ok(c, {
+      windowHours: 24,
+      count: items.length,
+      items
+    });
+  });
+
+  app.post('/api/bookings', verifyAuthStrict, async (c) => {
     const body = await c.req.json() as Partial<Booking>;
     const user = c.get('user');
     const { venueId, date, session, startTime, endTime, purpose } = body;
@@ -145,32 +342,39 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       return bad(c, 'Missing required booking fields');
     }
 
-    // Atomic availability check
-    const available = await BookingEntity.checkAvailability(c.env, venueId, date, startTime, endTime, session as SessionSlot);
-    if (!available) {
-      return bad(c, 'This slot is already reserved or pending approval');
+    try {
+      const created = await withBookingLock(c, venueId, date, async () => {
+        const available = await BookingEntity.checkAvailability(c.env, venueId, date, startTime, endTime, session as SessionSlot);
+        if (!available) {
+          throw new Error('This slot is already reserved or pending approval');
+        }
+
+        const newBooking: Booking = {
+          id: crypto.randomUUID(),
+          venueId,
+          userId,
+          userName, // TODO: Fetch real name from UserEntity if important
+          date,
+          session: session as SessionSlot,
+          startTime,
+          endTime,
+          status: 'PENDING',
+          createdAt: Date.now(),
+          purpose,
+          documents: body.documents
+        };
+
+        return BookingEntity.create(c.env, newBooking);
+      });
+
+      return ok(c, created);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create booking';
+      return bad(c, message);
     }
-
-    const newBooking: Booking = {
-      id: crypto.randomUUID(),
-      venueId,
-      userId,
-      userName, // TODO: Fetch real name from UserEntity if important
-      date,
-      session: session as SessionSlot,
-      startTime,
-      endTime,
-      status: 'PENDING',
-      createdAt: Date.now(),
-      purpose,
-      documents: body.documents
-    };
-
-    const created = await BookingEntity.create(c.env, newBooking);
-    return ok(c, created);
   });
 
-  app.post('/api/bookings/:id/status', verifyAuth, verifyAdmin, async (c) => {
+  app.post('/api/bookings/:id/status', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const id = c.req.param('id');
     const { status } = await c.req.json() as { status: string };
     const booking = new BookingEntity(c.env, id);
@@ -203,7 +407,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     return ok(c, await booking.getState());
   });
 
-  app.delete('/api/bookings/:id', verifyAuth, async (c) => {
+  app.delete('/api/bookings/:id', verifyAuthStrict, async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
 
@@ -248,7 +452,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   });
 
   // UPLOADS
-  app.post('/api/upload', verifyAuth, async (c) => {
+  app.post('/api/upload', verifyAuthStrict, async (c) => {
     try {
       const body = await c.req.parseBody();
       const file = body['file'];
@@ -260,6 +464,19 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       const docType = body['docType'] as string || 'DOC';
       const purpose = body['purpose'] as string || 'UnknownPurpose';
       const date = body['date'] as string || 'UnknownDate';
+      const mimeType = (file.type || '').toLowerCase();
+
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return bad(c, 'File too large. Maximum allowed size is 10MB.');
+      }
+
+      if (docType === 'HERO' || docType === 'APP_ICON') {
+        if (!mimeType.startsWith('image/')) {
+          return bad(c, 'Image upload accepts image files only.');
+        }
+      } else if (!ALLOWED_DOC_MIME_TYPES.has(mimeType)) {
+        return bad(c, 'Only PDF, DOC, and DOCX files are allowed.');
+      }
 
       // Use user info from token for filename
       const user = c.get('user');

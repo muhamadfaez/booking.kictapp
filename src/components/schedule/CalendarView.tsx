@@ -67,7 +67,7 @@ export function CalendarView({
             setSelectedVenues(allIds);
             onVenueFilterChange?.(allIds);
         }
-    }, [venues]);
+    }, [onVenueFilterChange, selectedVenues.length, venues]);
 
     const handleVenueToggle = (venueId: string) => {
         const newSelection = selectedVenues.includes(venueId)
@@ -441,7 +441,12 @@ export function CalendarView({
                                 {/* Event Columns */}
                                 <div className="absolute inset-0 flex">
                                     {viewRange.days?.map((day, dayIndex) => {
-                                        const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day));
+                                        const dayBookings = bookings.filter(
+                                            b =>
+                                                isSameDay(parseLocalDate(b.date), day) &&
+                                                b.status !== 'REJECTED' &&
+                                                b.status !== 'CANCELLED'
+                                        );
                                         const visibleBookings = dayBookings.filter(b => selectedVenues.includes(b.venueId));
 
                                         // Calculate layout for overlaps
@@ -516,7 +521,13 @@ export function CalendarView({
                                 {viewRange.days?.map((day, i) => {
                                     const isMonthStart = isSameDay(day, startOfMonth(date)); // Highlight 1st day of month
                                     const isCurrentMonth = isSameMonth(day, date);
-                                    const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId) && b.status !== 'REJECTED'); // Filter rejected and venue
+                                    const dayBookings = bookings.filter(
+                                        b =>
+                                            isSameDay(parseLocalDate(b.date), day) &&
+                                            selectedVenues.includes(b.venueId) &&
+                                            b.status !== 'REJECTED' &&
+                                            b.status !== 'CANCELLED'
+                                    );
 
                                     return (
                                         <div key={i} className={cn(
@@ -591,7 +602,13 @@ export function CalendarView({
                                         ))}
                                         {/* Days */}
                                         {eachDayOfInterval({ start: startOfMonth(monthDate), end: endOfMonth(monthDate) }).map(day => {
-                                            const dayBookings = bookings.filter(b => isSameDay(parseLocalDate(b.date), day) && selectedVenues.includes(b.venueId) && b.status !== 'REJECTED');
+                                            const dayBookings = bookings.filter(
+                                                b =>
+                                                    isSameDay(parseLocalDate(b.date), day) &&
+                                                    selectedVenues.includes(b.venueId) &&
+                                                    b.status !== 'REJECTED' &&
+                                                    b.status !== 'CANCELLED'
+                                            );
                                             const hasEvents = dayBookings.length > 0;
 
                                             return (

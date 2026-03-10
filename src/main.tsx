@@ -93,50 +93,12 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: "/admin/users",
-    element: (
-      <ProtectedRoute requiredRole="ADMIN">
-        <AdminUsersPage />
-      </ProtectedRoute>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: "/admin/settings",
-    element: (
-      <ProtectedRoute requiredRole="ADMIN">
-        <AdminSettingsPage />
-      </ProtectedRoute>
-    ),
-    errorElement: <RouteErrorBoundary />,
   }
 ]);
 
-export function AppProviders() {
-  const [googleClientId, setGoogleClientId] = useState(buildGoogleClientId);
-
-  useEffect(() => {
-    if (buildGoogleClientId) return;
-    let mounted = true;
-    fetch('/api/public-config')
-      .then((res) => res.json())
-      .then((json: { success?: boolean; data?: { googleClientId?: string } }) => {
-        const runtimeId = (json?.data?.googleClientId || '').trim();
-        if (mounted && runtimeId) setGoogleClientId(runtimeId);
-      })
-      .catch(() => {
-        // Keep fallback behavior; login screen will show API-driven error if not configured.
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  return (
-    <GoogleOAuthProvider clientId={googleClientId || 'disabled-client-id.apps.googleusercontent.com'}>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <GoogleOAuthProvider clientId={googleClientId}>
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <AuthProvider>
@@ -146,11 +108,5 @@ export function AppProviders() {
         </ErrorBoundary>
       </QueryClientProvider>
     </GoogleOAuthProvider>
-  );
-}
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AppProviders />
   </StrictMode>,
 )

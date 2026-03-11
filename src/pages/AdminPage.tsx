@@ -37,10 +37,10 @@ export default function AdminPage() {
           <div className="relative space-y-3">
             <div className="flex items-center gap-2 text-primary">
               <ShieldCheck className="w-5 h-5" />
-              <span className="text-sm font-medium uppercase tracking-wider">Admin Console</span>
+              <span className="text-sm font-medium uppercase tracking-wider">Admin Dashboard</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Command Center
+              Admin Center
             </h1>
             <p className="text-muted-foreground max-w-2xl">
               Manage facility requests, monitor workspace usage, and maintain institutional control.

@@ -5,8 +5,9 @@ import type { UserRole } from '@shared/types';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requiredRole?: UserRole;
+  disallowAdmin?: boolean;
 }
-export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requiredRole, disallowAdmin = false }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
   if (isLoading) {
     return (
@@ -21,6 +22,9 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
     // Block non-admin users from admin pages. Admins can access both admin and user pages.
     return <Navigate to="/dashboard" replace />;
+  }
+  if (disallowAdmin && user.role === 'ADMIN') {
+    return <Navigate to="/admin" replace />;
   }
   return <>{children}</>;
 }

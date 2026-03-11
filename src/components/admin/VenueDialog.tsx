@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import type { Venue } from "@shared/types";
@@ -32,7 +33,9 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
         capacity: '',
         description: '',
         imageUrl: '',
-        amenities: ''
+        amenities: '',
+        isAvailable: true,
+        unavailableReason: ''
     });
 
     const isEdit = !!venue;
@@ -45,7 +48,9 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
                 capacity: String(venue.capacity),
                 description: venue.description || '',
                 imageUrl: venue.imageUrl || '',
-                amenities: venue.amenities ? venue.amenities.join(', ') : ''
+                amenities: venue.amenities ? venue.amenities.join(', ') : '',
+                isAvailable: venue.isAvailable !== false,
+                unavailableReason: venue.unavailableReason || ''
             });
         } else {
             setFormData({
@@ -54,7 +59,9 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
                 capacity: '',
                 description: '',
                 imageUrl: '',
-                amenities: ''
+                amenities: '',
+                isAvailable: true,
+                unavailableReason: ''
             });
         }
     }, [venue, isOpen]);
@@ -120,7 +127,8 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
 
             const payload = {
                 ...formData,
-                amenities: amenitiesArray
+                amenities: amenitiesArray,
+                unavailableReason: formData.isAvailable ? '' : formData.unavailableReason.trim()
             };
 
             if (isEdit) {
@@ -208,6 +216,35 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
                                 placeholder="Brief description of the venue..."
                                 rows={2}
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Booking Availability</Label>
+                            <Select
+                                value={formData.isAvailable ? "AVAILABLE" : "UNAVAILABLE"}
+                                onValueChange={(v) =>
+                                    setFormData({
+                                        ...formData,
+                                        isAvailable: v === "AVAILABLE",
+                                        unavailableReason: v === "AVAILABLE" ? "" : formData.unavailableReason
+                                    })
+                                }
+                            >
+                                <SelectTrigger className="h-9">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="AVAILABLE">Available</SelectItem>
+                                    <SelectItem value="UNAVAILABLE">Unavailable</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {!formData.isAvailable && (
+                                <Input
+                                    value={formData.unavailableReason}
+                                    onChange={(e) => setFormData({ ...formData, unavailableReason: e.target.value })}
+                                    placeholder="Reason (e.g. Closed for maintenance)"
+                                />
+                            )}
                         </div>
 
                         {/* Facilities / Amenities */}

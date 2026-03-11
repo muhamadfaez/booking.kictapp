@@ -3,7 +3,7 @@ import { sign } from 'hono/jwt';
 import type { Env } from './core-utils';
 import { ok, bad } from './core-utils';
 import { UserEntity } from "./entities";
-import type { User, UserRole } from "@shared/types";
+import type { User } from "@shared/types";
 import { GoogleMailService } from './mail';
 import { recordSignIn } from './signin-tracker';
 
@@ -18,21 +18,6 @@ type OtpRecord = {
     expiresAt: number;
     attempts: number;
 };
-
-function getAdminEmails(env: Env): Set<string> {
-    const raw = ((env as any).ADMIN_EMAILS as string | undefined) || '';
-    return new Set(
-        raw
-            .split(',')
-            .map((email) => email.trim().toLowerCase())
-            .filter(Boolean)
-    );
-}
-
-function resolveRole(currentRole: UserRole | undefined, email: string, adminEmails: Set<string>): UserRole {
-    if (adminEmails.has(email)) return 'ADMIN';
-    return currentRole ?? 'USER';
-}
 
 async function requireJwtSecret(env: Env): Promise<string> {
     if (!env.JWT_SECRET || env.JWT_SECRET.trim().length < 32) {
@@ -107,7 +92,6 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         if (!email || !code) return bad(c, 'Missing email or code');
 
         const cleanEmail = email.toLowerCase().trim();
-        const adminEmails = getAdminEmails(c.env);
 
         // Verify Code
         const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
@@ -145,22 +129,15 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
 
         if (!userData.id || userData.id !== id) {
             // New User
-            const role = resolveRole(undefined, cleanEmail, adminEmails);
             const newUser: User = {
                 id,
                 email: cleanEmail,
                 name: name || cleanEmail.split('@')[0],
-                role,
+                role: 'USER',
                 avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`
             };
             await UserEntity.create(c.env, newUser);
             userData = newUser;
-        } else {
-            const role = resolveRole(userData.role, cleanEmail, adminEmails);
-            if (userData.role !== role) {
-                await userEntity.patch({ role });
-                userData.role = role;
-            }
         }
 
         // Generate JWT
@@ -213,7 +190,6 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         const cleanEmail = googleUser.email.toLowerCase().trim();
         const name = googleUser.name;
         const avatar = googleUser.picture;
-        const adminEmails = getAdminEmails(c.env);
 
         const id = `user_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
@@ -221,12 +197,11 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         let userData = await userEntity.getState();
 
         if (!userData.id || userData.id !== id) {
-            const role = resolveRole(undefined, cleanEmail, adminEmails);
             const newUser: User = {
                 id,
                 email: cleanEmail,
                 name: name || cleanEmail.split('@')[0],
-                role,
+                role: 'USER',
                 avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`
             };
             await UserEntity.create(c.env, newUser);
@@ -234,8 +209,6 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         } else {
             // Update existing user info if changed
             const updates: any = {};
-            const role = resolveRole(userData.role, cleanEmail, adminEmails);
-            if (userData.role !== role) updates.role = role;
             if (name && userData.name !== name) updates.name = name;
             if (avatar && userData.avatar !== avatar) updates.avatar = avatar;
 

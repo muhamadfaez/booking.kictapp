@@ -83,7 +83,7 @@ export default function BookingHistoryPage() {
                             <span className="text-sm font-medium uppercase tracking-wider">Booking History</span>
                         </div>
                         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                            Complete Records
+                            Booking History
                         </h1>
                         <p className="text-muted-foreground max-w-2xl">
                             View and search through all booking requests across all venues and time periods.

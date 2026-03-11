@@ -21,6 +21,8 @@ export interface Venue {
   imageUrl: string;
   amenities: string[];
   location: string;
+  isAvailable?: boolean;
+  unavailableReason?: string;
 }
 export interface Booking {
   id: string;

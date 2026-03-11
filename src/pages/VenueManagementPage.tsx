@@ -115,9 +115,14 @@ export default function VenueManagementPage() {
                                 <CardContent className="p-5 space-y-4">
                                     {/* Venue Info */}
                                     <div className="space-y-2">
-                                        <CardTitle className="text-lg font-bold group-hover:text-primary transition-colors">
-                                            {venue.name}
-                                        </CardTitle>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <CardTitle className="text-lg font-bold group-hover:text-primary transition-colors">
+                                                {venue.name}
+                                            </CardTitle>
+                                            <Badge variant={venue.isAvailable === false ? 'destructive' : 'secondary'}>
+                                                {venue.isAvailable === false ? 'Unavailable' : 'Available'}
+                                            </Badge>
+                                        </div>
                                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                             <MapPin className="w-4 h-4" />
                                             <span>{venue.location}</span>
@@ -126,6 +131,11 @@ export default function VenueManagementPage() {
                                             <Users className="w-4 h-4" />
                                             <span>Capacity: {venue.capacity} people</span>
                                         </div>
+                                        {venue.isAvailable === false && venue.unavailableReason && (
+                                            <p className="text-xs text-destructive">
+                                                Reason: {venue.unavailableReason}
+                                            </p>
+                                        )}
                                     </div>
 
                                     {/* Description */}

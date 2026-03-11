@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, Users, MapPin, Building2, Search, Filter, ArrowRight, Clock, Shield } from 'lucide-react';
+import { Calendar, Users, MapPin, Building2, Search, Filter, ArrowRight, Clock, Shield, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { VenueCard } from '@/components/booking/VenueCard';
@@ -59,9 +59,12 @@ export default function LandingPage() {
   const filteredVenues = venues?.filter((venue) =>
     (venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       venue.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      venue.description.toLowerCase().includes(searchQuery.toLowerCase())) &&
-    (availableSet.size === 0 || availableSet.has(venue.id))
+      venue.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+  const displayedVenues = filteredVenues?.filter((venue) => {
+    if (venue.isAvailable === false) return true;
+    return availableSet.size === 0 || availableSet.has(venue.id);
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,24 +104,29 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Image Section with Overlaid Content */}
-      <div className="w-full h-[500px] md:h-[600px] lg:h-[700px] overflow-hidden relative flex items-center justify-center">
+      <div className="w-full h-[520px] md:h-[620px] lg:h-[720px] overflow-hidden relative flex items-center justify-center">
         <img
           src={heroImageUrl}
-          alt="Campus Painting"
+          alt="KICT Campus"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/45 to-black/60 backdrop-blur-[2px]" />
 
         <div className="relative z-10 container mx-auto px-4 text-center space-y-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-white text-xs font-semibold uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            Kulliyyah of ICT Venue Booking
+          </div>
 
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight max-w-4xl mx-auto text-white drop-shadow-lg animate-fade-in-up">
-            Book Your Perfect{' '}
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight max-w-5xl mx-auto text-white drop-shadow-lg animate-fade-in-up leading-tight">
+            Reserve KICT Spaces{' '}
             <p></p>
-            <span className="text-primary-foreground underline decoration-primary decoration-4 underline-offset-8">VENUE</span>
+            <span className="text-primary-foreground underline decoration-primary decoration-4 underline-offset-8">with Confidence</span>
           </h1>
 
-          <p className="text-lg md:text-2xl text-white/90 max-w-2xl mx-auto drop-shadow-md animate-fade-in-up delay-100">
-            Discover and reserve professional meeting rooms, conference halls, and collaborative spaces for your team.
+          <p className="text-lg md:text-2xl text-white/90 max-w-3xl mx-auto drop-shadow-md animate-fade-in-up delay-100">
+            Centralized booking for lecture spaces, labs, halls, and collaborative rooms across
+            the Kulliyyah of Information and Communication Technology.
           </p>
 
           {/* Search Bar */}
@@ -127,7 +135,7 @@ export default function LandingPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <Input
                 type="text"
-                placeholder="Search by venue name, location, or amenities..."
+                placeholder="Search venue name, location, or facility..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-16 pl-12 pr-4 text-lg rounded-2xl border-0 bg-white/95 backdrop-blur shadow-2xl focus-visible:ring-2 focus-visible:ring-primary transition-all"
@@ -139,28 +147,65 @@ export default function LandingPage() {
           <div className="flex flex-wrap justify-center gap-8 pt-6 animate-fade-in-up delay-300">
             <div className="flex items-center gap-3 text-white">
               <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]" />
-              <span className="font-semibold">{venues?.length || 0} Venues Available</span>
+              <span className="font-semibold">{venues?.length || 0} KICT Venues</span>
             </div>
             <div className="flex items-center gap-3 text-white">
               <div className="w-3 h-3 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.5)]" />
-              <span className="font-semibold">Instant Booking</span>
+              <span className="font-semibold">Realtime Availability</span>
             </div>
             <div className="flex items-center gap-3 text-white">
               <div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(var(--primary),0.5)]" />
-              <span className="font-semibold">24/7 Support</span>
+              <span className="font-semibold">Academic Workflow Ready</span>
             </div>
           </div>
         </div>
       </div>
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* KICT Value Strip */}
+        <section className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="border-border/50 bg-gradient-subtle">
+            <div className="p-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Calendar className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold">Structured Scheduling</p>
+                <p className="text-sm text-muted-foreground">Aligned to KICT class and event sessions.</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="border-border/50 bg-gradient-subtle">
+            <div className="p-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Users className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold">Role-Based Access</p>
+                <p className="text-sm text-muted-foreground">Clear flow for students, staff, and administrators.</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="border-border/50 bg-gradient-subtle">
+            <div className="p-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold">Reliable Occupancy</p>
+                <p className="text-sm text-muted-foreground">Prevents double booking with real-time checks.</p>
+              </div>
+            </div>
+          </Card>
+        </section>
+
         {/* Venues Section */}
         <section className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Available Venues</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">KICT Venue Directory</h2>
               <p className="text-muted-foreground mt-1">
-                {filteredVenues?.length || 0} {searchQuery ? 'matching' : 'professional'} spaces ready to book
+                {displayedVenues?.length || 0} {searchQuery ? 'matching' : 'bookable'} spaces shown
               </p>
             </div>
 
@@ -203,14 +248,19 @@ export default function LandingPage() {
                   </div>
                 </Card>
               ))
-            ) : filteredVenues && filteredVenues.length > 0 ? (
-              filteredVenues.map((venue, index) => (
+            ) : displayedVenues && displayedVenues.length > 0 ? (
+              displayedVenues.map((venue, index) => (
                 <div
                   key={venue.id}
                   className="animate-fade-in"
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
-                  <VenueCard venue={venue} onBook={handleBookVenue} />
+                  <VenueCard
+                    venue={venue}
+                    onBook={handleBookVenue}
+                    disabled={venue.isAvailable === false}
+                    disabledReason={venue.unavailableReason || 'Closed for maintenance'}
+                  />
                 </div>
               ))
             ) : (
@@ -228,26 +278,26 @@ export default function LandingPage() {
         {/* Features Section */}
         <section className="mt-20 mb-12">
           <div className="text-center mb-12">
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">Why Choose BookingTrack?</h2>
-            <p className="text-muted-foreground">Professional features for seamless workspace management</p>
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">Built for KICT Operations</h2>
+            <p className="text-muted-foreground">Designed around academic and administrative booking workflows</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               {
                 icon: Calendar,
-                title: 'Easy Scheduling',
-                description: 'Book venues in seconds with our intuitive calendar interface and real-time availability.',
+                title: 'Session-Aware Booking',
+                description: 'Support for defined time windows and custom slots used in KICT activities.',
               },
               {
                 icon: Shield,
-                title: 'Secure & Reliable',
-                description: 'Enterprise-grade security with atomic booking integrity and zero overbooking guarantee.',
+                title: 'Approval Governance',
+                description: 'Role-based controls for transparent review, approval, and venue usage oversight.',
               },
               {
                 icon: Clock,
-                title: 'Instant Confirmation',
-                description: 'Get immediate booking confirmations and automated notifications for all your reservations.',
+                title: 'Live Availability View',
+                description: 'Users and admins can view booking occupancy updates in near real time.',
               },
             ].map((feature, index) => (
               <Card
@@ -273,7 +323,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                &copy; 2024 {settings.appName}. {settings.appLabel}.
+                &copy; {new Date().getFullYear()} {settings.appName}. Kulliyyah of ICT Booking Platform.
               </span>
             </div>
             <div className="flex gap-6 text-sm text-muted-foreground">

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
-import type { Booking } from '@shared/types';
+import type { Booking, Venue } from '@shared/types';
 import {
   Card,
   CardHeader,
@@ -17,16 +17,20 @@ import {
   Clock,
   CheckCircle2,
   Timer,
-  XCircle,
-  MapPin,
-  Building2,
-  Filter
+  XCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 export default function MyBookingsPage() {
   const { user } = useAuth();
+  const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
   const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -36,6 +40,10 @@ export default function MyBookingsPage() {
     queryKey: ['my-bookings', user?.id],
     queryFn: () => api<Booking[]>(`/api/bookings?userId=${user?.id}`),
     enabled: !!user?.id
+  });
+  const { data: venues = [] } = useQuery({
+    queryKey: ['venues'],
+    queryFn: () => api<Venue[]>('/api/venues')
   });
 
   const getStatusConfig = (status: string) => {
@@ -64,10 +72,6 @@ export default function MyBookingsPage() {
     }
   };
 
-  const pendingCount = bookings?.filter(b => b.status === 'PENDING').length ?? 0;
-  const approvedCount = bookings?.filter(b => b.status === 'APPROVED').length ?? 0;
-  const totalCount = bookings?.length ?? 0;
-
   return (
     <AppLayout container>
       <div className="space-y-8">
@@ -88,106 +92,132 @@ export default function MyBookingsPage() {
               </p>
             </div>
 
-            {/* Stats */}
-            <div className="flex gap-4">
-              <div className="text-center px-6 py-3 rounded-xl bg-card border border-border/50">
-                <p className="text-2xl font-bold">{totalCount}</p>
-                <p className="text-xs text-muted-foreground">Total</p>
-              </div>
-              <div className="text-center px-6 py-3 rounded-xl bg-card border border-border/50">
-                <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
-                <p className="text-xs text-muted-foreground">Pending</p>
-              </div>
-              <div className="text-center px-6 py-3 rounded-xl bg-card border border-border/50">
-                <p className="text-2xl font-bold text-emerald-600">{approvedCount}</p>
-                <p className="text-xs text-muted-foreground">Approved</p>
-              </div>
-            </div>
           </div>
         </header>
 
-        {/* Booking Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {bookingsLoading ? (
-            Array.from({ length: 8 }, (_, i) => (
-              <Card key={i} className="overflow-hidden">
-                <CardContent className="p-5 space-y-3">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-6 w-20" />
+        {/* Recent Bookings */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <CalendarDays className="w-5 h-5 text-primary" />
+            My Recent Bookings
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {bookingsLoading ? (
+              [1, 2].map(i => <Skeleton key={i} className="h-32 w-full" />)
+            ) : bookings?.length === 0 ? (
+              <Card className="col-span-full py-10 border-dashed">
+                <CardContent className="flex flex-col items-center justify-center text-muted-foreground">
+                  <Clock className="w-10 h-10 mb-2 opacity-20" />
+                  <p>No active bookings found.</p>
                 </CardContent>
               </Card>
-            ))
-          ) : bookings?.length === 0 ? (
-            <Card className="col-span-full py-20 border-dashed border-2 bg-muted/20">
-              <CardContent className="flex flex-col items-center justify-center text-muted-foreground space-y-4">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-                  <Clock className="w-10 h-10 opacity-40" />
+            ) : (
+              bookings.slice(0, 3).map((booking) => {
+                const statusConfig = getStatusConfig(booking.status);
+                const StatusIcon = statusConfig.icon;
+                return (
+                  <Card
+                    key={`recent-${booking.id}`}
+                    className="relative overflow-hidden cursor-pointer hover:shadow-md transition-all"
+                    onClick={() => setSelectedBooking(booking)}
+                  >
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-medium text-muted-foreground">{booking.date}</p>
+                          <CardTitle className="text-sm font-bold">{booking.purpose}</CardTitle>
+                        </div>
+                        <Badge className={`${statusConfig.className} text-[10px] font-bold uppercase px-2.5 py-1`}>
+                          <StatusIcon className="w-3 h-3 mr-1" />
+                          {statusConfig.label}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {booking.startTime && booking.endTime
+                          ? `${booking.startTime} - ${booking.endTime}`
+                          : booking.session ? booking.session.replace('_', ' ') : 'N/A'}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+      </div>
+
+      <Dialog open={!!selectedBooking} onOpenChange={(open) => !open && setSelectedBooking(null)}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Booking Details</DialogTitle>
+            <DialogDescription>
+              Full information for your selected booking.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedBooking && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-muted-foreground">Date</p>
+                  <p className="font-medium">{format(parseLocalDate(selectedBooking.date), 'MMM dd, yyyy')}</p>
                 </div>
-                <div className="text-center space-y-2">
-                  <p className="text-xl font-semibold">No bookings yet</p>
-                  <p className="text-sm max-w-sm">
-                    Your reservations will appear here once you make a booking from the dashboard.
+                <div>
+                  <p className="text-muted-foreground">Status</p>
+                  <p className="font-medium">{selectedBooking.status}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Time</p>
+                  <p className="font-medium">
+                    {selectedBooking.startTime && selectedBooking.endTime
+                      ? `${selectedBooking.startTime} - ${selectedBooking.endTime}`
+                      : selectedBooking.session ? selectedBooking.session.replace('_', ' ') : 'N/A'}
                   </p>
                 </div>
-                <Button className="btn-gradient mt-4">
-                  <Building2 className="mr-2 w-4 h-4" />
-                  Explore Venues
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            bookings?.map((booking, index) => {
-              const statusConfig = getStatusConfig(booking.status);
-              const StatusIcon = statusConfig.icon;
+                <div>
+                  <p className="text-muted-foreground">Venue</p>
+                  <p className="font-medium">
+                    {venues.find((v) => v.id === selectedBooking.venueId)?.name || selectedBooking.venueId}
+                  </p>
+                </div>
+              </div>
 
-              return (
-                <Card
-                  key={booking.id}
-                  className="group overflow-hidden border hover:shadow-lg transition-all duration-300 hover:border-border animate-fade-in"
-                  style={{ animationDelay: `${index * 0.05}s` }}
-                >
-                  <CardHeader className="p-5 pb-3">
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          {format(parseLocalDate(booking.date), 'EEEE')}
-                        </p>
-                        <p className="text-lg font-bold text-primary">
-                          {format(parseLocalDate(booking.date), 'MMM dd, yyyy')}
-                        </p>
-                      </div>
-                      <Badge className={`${statusConfig.className} text-[10px] font-bold uppercase px-2.5 py-1`}>
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {statusConfig.label}
-                      </Badge>
-                    </div>
-                  </CardHeader>
+              <div>
+                <p className="text-muted-foreground">Purpose</p>
+                <p className="font-medium">{selectedBooking.purpose || '-'}</p>
+              </div>
 
-                  <CardContent className="p-5 pt-0 space-y-4">
-                    <CardTitle className="text-base leading-tight line-clamp-2 group-hover:text-primary transition-colors">
-                      {booking.purpose}
-                    </CardTitle>
+              {selectedBooking.programType && (
+                <div>
+                  <p className="text-muted-foreground">Program Type</p>
+                  <p className="font-medium">{selectedBooking.programType}</p>
+                </div>
+              )}
 
-                    <div className="space-y-2 pt-2 border-t border-border/50">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Clock className="w-4 h-4" />
-                        <span className="font-medium">
-                          {booking.startTime && booking.endTime
-                            ? `${booking.startTime} - ${booking.endTime}`
-                            : booking.session ? booking.session.replace('_', ' ') : 'N/A'
-                          }
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+              {selectedBooking.documents && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Documents</p>
+                  <div className="flex flex-col gap-1">
+                    {selectedBooking.documents.proposalDownloadUrl && (
+                      <a className="text-primary underline" href={selectedBooking.documents.proposalDownloadUrl} target="_blank" rel="noreferrer">
+                        View Proposal
+                      </a>
+                    )}
+                    {selectedBooking.documents.approvalLetterDownloadUrl && (
+                      <a className="text-primary underline" href={selectedBooking.documents.approvalLetterDownloadUrl} target="_blank" rel="noreferrer">
+                        View Approval Letter
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

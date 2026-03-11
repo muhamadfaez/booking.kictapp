@@ -6,8 +6,19 @@ import type { User } from '@shared/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Activity } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
+import { Users, Activity, UserPlus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -27,8 +38,12 @@ type SignInSummary = {
 };
 
 export default function AdminUsersPage() {
-  const [roleDraft, setRoleDraft] = useState<Record<string, 'USER' | 'ADMIN'>>({});
+  const [draftByUserId, setDraftByUserId] = useState<Record<string, { name: string; role: 'USER' | 'ADMIN' }>>({});
+  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'USER' as 'USER' | 'ADMIN' });
+  const [creatingUser, setCreatingUser] = useState(false);
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
 
   const { data: users = [], refetch: refetchUsers } = useQuery({
     queryKey: ['admin-users'],
@@ -42,24 +57,75 @@ export default function AdminUsersPage() {
 
   const rows = useMemo(() => users.map((u) => ({
     ...u,
-    nextRole: roleDraft[u.id] ?? u.role
-  })), [users, roleDraft]);
+    nextRole: draftByUserId[u.id]?.role ?? u.role,
+    nextName: draftByUserId[u.id]?.name ?? u.name ?? ''
+  })), [users, draftByUserId]);
 
-  const handleSaveRole = async (userId: string) => {
-    const nextRole = roleDraft[userId];
-    if (!nextRole) return;
-    setSavingUserId(userId);
+  const handleCreateUser = async () => {
+    const email = createForm.email.trim().toLowerCase();
+    const name = createForm.name.trim();
+    if (!email) {
+      toast.error('Email is required');
+      return;
+    }
+
+    setCreatingUser(true);
     try {
-      await api(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+      await api<User>('/api/admin/users', {
         method: 'POST',
-        body: JSON.stringify({ role: nextRole })
+        body: JSON.stringify({
+          email,
+          name,
+          role: createForm.role
+        })
       });
-      toast.success('User role updated');
+      toast.success('User created');
+      setCreateForm({ name: '', email: '', role: 'USER' });
       await refetchUsers();
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to update role');
+      toast.error(err?.message || 'Failed to create user');
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const handleSaveUser = async (userId: string, nextName: string, nextRole: 'USER' | 'ADMIN') => {
+    setSavingUserId(userId);
+    try {
+      await api<User>(`/api/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: nextName.trim(),
+          role: nextRole
+        })
+      });
+      toast.success('User updated');
+      setDraftByUserId((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      await refetchUsers();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update user');
     } finally {
       setSavingUserId(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    setDeletingUserId(userId);
+    try {
+      await api<{ deleted: boolean; id: string }>(`/api/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE'
+      });
+      toast.success('User deleted');
+      setConfirmDeleteUserId(null);
+      await refetchUsers();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete user');
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -82,8 +148,48 @@ export default function AdminUsersPage() {
 
         <Card className="border-0 shadow-sm overflow-hidden">
           <CardHeader className="px-6 py-5 border-b border-border/50 bg-muted/30">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <UserPlus className="w-4 h-4" />
+              Create User
+            </CardTitle>
+            <CardDescription className="mt-1">Add a new user and optionally grant ADMIN role.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Input
+                placeholder="Full name"
+                value={createForm.name}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+              <Input
+                type="email"
+                placeholder="Email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
+              <Select
+                value={createForm.role}
+                onValueChange={(v) => setCreateForm((prev) => ({ ...prev, role: v as 'USER' | 'ADMIN' }))}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USER">USER</SelectItem>
+                  <SelectItem value="ADMIN">ADMIN</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={handleCreateUser} disabled={creatingUser} className="md:justify-self-end">
+                {creatingUser ? 'Creating...' : 'Create User'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardHeader className="px-6 py-5 border-b border-border/50 bg-muted/30">
             <CardTitle className="text-lg font-bold">Admin Role Management</CardTitle>
-            <CardDescription className="mt-1">Promote or demote users between USER and ADMIN roles.</CardDescription>
+            <CardDescription className="mt-1">Update user profile and roles, or remove users.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-auto">
@@ -93,13 +199,25 @@ export default function AdminUsersPage() {
                     <th className="text-left font-semibold p-3">Name</th>
                     <th className="text-left font-semibold p-3">Email</th>
                     <th className="text-left font-semibold p-3">Current Role</th>
-                    <th className="text-left font-semibold p-3">Update Role</th>
+                    <th className="text-left font-semibold p-3">Update</th>
+                    <th className="text-left font-semibold p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((u) => (
                     <tr key={u.id} className="border-b last:border-b-0">
-                      <td className="p-3 font-medium">{u.name || u.id}</td>
+                      <td className="p-3">
+                        <Input
+                          className="h-9 min-w-48"
+                          value={u.nextName}
+                          onChange={(e) =>
+                            setDraftByUserId((prev) => ({
+                              ...prev,
+                              [u.id]: { name: e.target.value, role: prev[u.id]?.role ?? u.role }
+                            }))
+                          }
+                        />
+                      </td>
                       <td className="p-3 text-muted-foreground">{u.email}</td>
                       <td className="p-3">
                         <Badge variant={u.role === 'ADMIN' ? 'default' : 'outline'}>{u.role}</Badge>
@@ -108,7 +226,12 @@ export default function AdminUsersPage() {
                         <div className="flex items-center gap-2 max-w-xs">
                           <Select
                             value={u.nextRole}
-                            onValueChange={(v) => setRoleDraft((prev) => ({ ...prev, [u.id]: v as 'USER' | 'ADMIN' }))}
+                            onValueChange={(v) =>
+                              setDraftByUserId((prev) => ({
+                                ...prev,
+                                [u.id]: { name: prev[u.id]?.name ?? u.name ?? '', role: v as 'USER' | 'ADMIN' }
+                              }))
+                            }
                           >
                             <SelectTrigger className="h-9">
                               <SelectValue />
@@ -120,12 +243,25 @@ export default function AdminUsersPage() {
                           </Select>
                           <Button
                             size="sm"
-                            disabled={savingUserId === u.id || u.nextRole === u.role}
-                            onClick={() => handleSaveRole(u.id)}
+                            disabled={
+                              savingUserId === u.id ||
+                              (u.nextRole === u.role && u.nextName.trim() === (u.name || '').trim())
+                            }
+                            onClick={() => handleSaveUser(u.id, u.nextName, u.nextRole)}
                           >
                             Save
                           </Button>
                         </div>
+                      </td>
+                      <td className="p-3">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={() => setConfirmDeleteUserId(u.id)}
+                          disabled={deletingUserId === u.id}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -190,6 +326,30 @@ export default function AdminUsersPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={!!confirmDeleteUserId} onOpenChange={(open) => !open && setConfirmDeleteUserId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will permanently remove the selected user account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingUserId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!confirmDeleteUserId || !!deletingUserId}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!confirmDeleteUserId) return;
+                void handleDeleteUser(confirmDeleteUserId);
+              }}
+            >
+              {deletingUserId ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

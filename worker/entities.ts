@@ -11,7 +11,7 @@ export class VenueEntity extends IndexedEntity<Venue> {
   static readonly entityName = "venue";
   static readonly indexName = "venues";
   static readonly initialState: Venue = {
-    id: "", name: "", description: "", capacity: 0, imageUrl: "", amenities: [], location: ""
+    id: "", name: "", description: "", capacity: 0, imageUrl: "", amenities: [], location: "", isAvailable: true, unavailableReason: ""
   };
   static seedData = MOCK_VENUES;
   // Stored in a separate key pattern: venue_avail:{venueId}:{date}

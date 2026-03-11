@@ -106,6 +106,10 @@ async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () 
 }
 
 export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }>) {
+  const normalizeEmail = (value: string) => value.trim().toLowerCase();
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const userIdFromEmail = (email: string) => `user_${normalizeEmail(email).replace(/[^a-zA-Z0-9]/g, '_')}`;
+
   // SEED INITIAL DATA (Admin Only)
   app.get('/api/init', verifyAuthStrict, verifyAdminStrict, async (c) => {
     await UserEntity.ensureSeed(c.env);
@@ -185,6 +189,12 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     const unavailableVenueIds = new Set<string>();
     const [reqStart, reqEnd] = requestedRange;
 
+    for (const v of venues.items) {
+      if (v.isAvailable === false) {
+        unavailableVenueIds.add(v.id);
+      }
+    }
+
     for (const b of bookings.items) {
       if (b.date !== date) continue;
       if (b.status === 'CANCELLED' || b.status === 'REJECTED') continue;
@@ -212,7 +222,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
   app.post('/api/venues', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const body = await c.req.json() as any;
-    const { name, location, capacity, description, imageUrl, amenities } = body;
+    const { name, location, capacity, description, imageUrl, amenities, isAvailable, unavailableReason } = body;
 
     if (!name || !location || !capacity) {
       return bad(c, 'Missing required fields: name, location, capacity');
@@ -225,7 +235,9 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       capacity: Number(capacity),
       description: description || '',
       imageUrl: imageUrl || '',
-      amenities: amenities || []
+      amenities: amenities || [],
+      isAvailable: isAvailable !== false,
+      unavailableReason: isAvailable === false ? String(unavailableReason || '').trim() : ''
     };
 
     const created = await VenueEntity.create(c.env, newVenue);
@@ -239,7 +251,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     const venue = new VenueEntity(c.env, id);
     if (!await venue.exists()) return notFound(c, 'Venue not found');
 
-    const { name, location, capacity, description, imageUrl, amenities } = body;
+    const { name, location, capacity, description, imageUrl, amenities, isAvailable, unavailableReason } = body;
     const updates: any = {};
 
     if (name !== undefined) updates.name = name;
@@ -248,6 +260,11 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     if (description !== undefined) updates.description = description;
     if (imageUrl !== undefined) updates.imageUrl = imageUrl;
     if (amenities !== undefined) updates.amenities = amenities;
+    if (isAvailable !== undefined) updates.isAvailable = Boolean(isAvailable);
+    if (unavailableReason !== undefined) updates.unavailableReason = String(unavailableReason).trim();
+    if (updates.isAvailable === true && unavailableReason === undefined) {
+      updates.unavailableReason = '';
+    }
 
     await venue.patch(updates);
     return ok(c, await venue.getState());
@@ -298,11 +315,79 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
   });
 
+  app.get('/api/bookings/occupancy', verifyAuthStrict, async (c) => {
+    await BookingEntity.ensureSeed(c.env);
+    const user = c.get('user');
+    const list = await BookingEntity.list(c.env);
+    const active = list.items.filter((b) => b.status !== 'CANCELLED' && b.status !== 'REJECTED');
+
+    if (user.role === 'ADMIN') {
+      return ok(c, active);
+    }
+
+    // For non-admin users, mask other users' identities/purposes while still exposing occupancy.
+    const masked = active.map((b) => {
+      if (b.userId === user.sub) return b;
+      return {
+        ...b,
+        userName: 'Reserved',
+        purpose: 'Reserved'
+      };
+    });
+    return ok(c, masked);
+  });
+
   // ADMIN USER ROLE MANAGEMENT
   app.get('/api/admin/users', verifyAuthStrict, verifyAdminStrict, async (c) => {
     await UserEntity.ensureSeed(c.env);
     const users = await UserEntity.list(c.env);
     return ok(c, users.items);
+  });
+
+  app.post('/api/admin/users', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const body = await c.req.json() as { email?: string; name?: string; role?: 'USER' | 'ADMIN' };
+    const email = normalizeEmail(body.email || '');
+    const role = body.role === 'ADMIN' ? 'ADMIN' : 'USER';
+
+    if (!isValidEmail(email)) {
+      return bad(c, 'Valid email is required');
+    }
+
+    const id = userIdFromEmail(email);
+    const user = new UserEntity(c.env, id);
+    if (await user.exists()) {
+      return bad(c, 'User already exists');
+    }
+
+    const created = await UserEntity.create(c.env, {
+      id,
+      email,
+      name: (body.name || '').trim() || email.split('@')[0],
+      role,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`
+    });
+    return ok(c, created);
+  });
+
+  app.put('/api/admin/users/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json() as { name?: string; role?: 'USER' | 'ADMIN' };
+    const user = new UserEntity(c.env, id);
+    if (!await user.exists()) return notFound(c, 'User not found');
+
+    const updates: Partial<{ name: string; role: 'USER' | 'ADMIN' }> = {};
+    if (body.name !== undefined) updates.name = String(body.name).trim();
+    if (body.role !== undefined) {
+      if (body.role !== 'USER' && body.role !== 'ADMIN') {
+        return bad(c, 'Role must be USER or ADMIN');
+      }
+      updates.role = body.role;
+    }
+
+    if (Object.keys(updates).length === 0) return bad(c, 'No updates provided');
+
+    await user.patch(updates);
+    return ok(c, await user.getState());
   });
 
   app.post('/api/admin/users/:id/role', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -317,6 +402,29 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     await user.patch({ role });
     return ok(c, await user.getState());
+  });
+
+  app.delete('/api/admin/users/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const id = c.req.param('id');
+    const requester = c.get('user');
+    if (requester?.sub === id) {
+      return bad(c, 'You cannot delete your own account');
+    }
+
+    const user = new UserEntity(c.env, id);
+    if (!await user.exists()) return notFound(c, 'User not found');
+    const state = await user.getState();
+
+    if (state.role === 'ADMIN') {
+      const users = await UserEntity.list(c.env);
+      const adminCount = users.items.filter((u) => u.role === 'ADMIN').length;
+      if (adminCount <= 1) {
+        return bad(c, 'Cannot delete the last admin account');
+      }
+    }
+
+    await UserEntity.delete(c.env, id);
+    return ok(c, { deleted: true, id });
   });
 
   app.get('/api/admin/signins-24h', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -340,6 +448,16 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     // Validation
     if (!venueId || !date || (!session && (!startTime || !endTime)) || !purpose) {
       return bad(c, 'Missing required booking fields');
+    }
+
+    const venue = new VenueEntity(c.env, venueId);
+    if (!await venue.exists()) {
+      return notFound(c, 'Venue not found');
+    }
+    const venueData = await venue.getState();
+    if (venueData.isAvailable === false) {
+      const reason = venueData.unavailableReason ? ` (${venueData.unavailableReason})` : '';
+      return bad(c, `Venue is unavailable for booking${reason}`);
     }
 
     try {

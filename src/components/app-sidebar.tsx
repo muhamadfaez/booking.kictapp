@@ -37,15 +37,15 @@ export function AppSidebar(): JSX.Element {
   const { settings } = useAppSettings();
 
   const navItems = isAdmin ? [
-    { title: "Admin Console", icon: ShieldCheck, href: "/admin" },
-    { title: "User", icon: Users, href: "/admin/users" },
+    { title: "Admin Dashboard", icon: ShieldCheck, href: "/admin" },
+    { title: "User Management", icon: Users, href: "/admin/users" },
     { title: "Venue Management", icon: Building2, href: "/admin/venues" },
     { title: "Global Schedule", icon: CalendarDays, href: "/schedule" },
-    { title: "Global History", icon: History, href: "/admin/history" },
+    { title: "Booking History", icon: History, href: "/admin/history" },
     { title: "Live Site", icon: Globe, href: "/" },
   ] : [
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { title: "Schedule", icon: CalendarDays, href: "/schedule" },
+    { title: "Venue", icon: Building2, href: "/venues" },
     { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
   ];
 

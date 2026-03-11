@@ -11,7 +11,7 @@ export const MOCK_USERS: User[] = [
     id: 'u2', 
     name: 'Sarah Chen', 
     email: 'sarah@nexus.com', 
-    role: 'ADMIN',
+    role: 'USER',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah'
   }
 ];

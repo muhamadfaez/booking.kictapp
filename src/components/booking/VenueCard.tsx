@@ -8,6 +8,8 @@ import type { Venue } from "@shared/types";
 interface VenueCardProps {
   venue: Venue;
   onBook: (venue: Venue) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 const amenityIcons: Record<string, React.ElementType> = {
@@ -16,18 +18,24 @@ const amenityIcons: Record<string, React.ElementType> = {
   'coffee': Coffee,
 };
 
-export function VenueCard({ venue, onBook }: VenueCardProps) {
+export function VenueCard({ venue, onBook, disabled = false, disabledReason }: VenueCardProps) {
   return (
-    <Card className="group overflow-hidden border-0 shadow-sm hover:shadow-xl transition-all duration-500 bg-card">
+    <Card className={`group overflow-hidden border-0 shadow-sm transition-all duration-500 bg-card ${disabled ? 'opacity-80' : 'hover:shadow-xl'}`}>
       {/* Image Container */}
       <div className="aspect-[4/3] relative overflow-hidden">
         <img
           src={venue.imageUrl}
           alt={venue.name}
-          className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-110"
+          className={`object-cover w-full h-full transition-transform duration-700 ${disabled ? 'grayscale-[0.5]' : 'group-hover:scale-110'}`}
         />
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+        {disabled && (
+          <div className="absolute left-4 top-4 z-10">
+            <Badge variant="destructive">Closed for maintenance</Badge>
+          </div>
+        )}
 
         {/* Capacity Badge */}
         <Badge className="absolute top-4 right-4 bg-white/95 dark:bg-black/80 backdrop-blur-sm text-foreground hover:bg-white/100 shadow-lg border-0 px-3 py-1.5">
@@ -40,12 +48,13 @@ export function VenueCard({ venue, onBook }: VenueCardProps) {
           <Button
             onClick={(e) => {
               e.stopPropagation();
-              onBook(venue);
+              if (!disabled) onBook(venue);
             }}
             className="w-full btn-gradient rounded-xl shadow-2xl"
+            disabled={disabled}
           >
-            Quick Book
-            <ArrowRight className="ml-2 w-4 h-4" />
+            {disabled ? 'Unavailable' : 'Quick Book'}
+            {!disabled && <ArrowRight className="ml-2 w-4 h-4" />}
           </Button>
         </div>
       </div>
@@ -68,6 +77,11 @@ export function VenueCard({ venue, onBook }: VenueCardProps) {
         <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
           {venue.description}
         </p>
+        {disabled && (
+          <p className="text-xs text-destructive font-medium">
+            {disabledReason || 'This venue is currently unavailable for booking.'}
+          </p>
+        )}
 
         {/* Amenities - with safe check for undefined */}
         {venue.amenities && venue.amenities.length > 0 && (
@@ -95,12 +109,15 @@ export function VenueCard({ venue, onBook }: VenueCardProps) {
 
       <CardFooter className="p-5 pt-0">
         <Button
-          onClick={() => onBook(venue)}
+          onClick={() => {
+            if (!disabled) onBook(venue);
+          }}
           variant="outline"
           className="w-full h-11 rounded-xl border-2 hover:border-primary hover:bg-primary/5 font-semibold transition-all duration-300 group/btn"
+          disabled={disabled}
         >
-          <span>Reserve Now</span>
-          <ArrowRight className="ml-2 w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+          <span>{disabled ? 'Unavailable' : 'Reserve Now'}</span>
+          {!disabled && <ArrowRight className="ml-2 w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />}
         </Button>
       </CardFooter>
     </Card>

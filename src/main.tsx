@@ -17,6 +17,7 @@ import '@/index.css'
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
+import VenuePage from '@/pages/VenuePage'
 import AdminPage from '@/pages/AdminPage'
 import AdminUsersPage from '@/pages/AdminUsersPage'
 import AdminSettingsPage from '@/pages/AdminSettingsPage'
@@ -27,7 +28,7 @@ import { AuthProvider } from '@/lib/mock-auth'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 
 const queryClient = new QueryClient();
-const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 const router = createBrowserRouter([
   {
@@ -43,7 +44,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard",
     element: (
-      <ProtectedRoute requiredRole="USER">
+      <ProtectedRoute requiredRole="USER" disallowAdmin>
         <DashboardPage />
       </ProtectedRoute>
     ),
@@ -54,6 +55,15 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute requiredRole="USER">
         <SchedulePage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/venues",
+    element: (
+      <ProtectedRoute requiredRole="USER">
+        <VenuePage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -81,6 +91,24 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute requiredRole="ADMIN">
         <VenueManagementPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin/users",
+    element: (
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminUsersPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin/settings",
+    element: (
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminSettingsPage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from '@/hooks/useAuth';
@@ -15,10 +16,20 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, User as UserIcon, Bell, Settings, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from 'react-router-dom';
+import { api } from '@/lib/api-client';
+import type { Notification } from '@shared/types';
+import { formatDistanceToNow } from 'date-fns';
 
 export function DashboardHeader() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api<Notification[]>('/api/notifications'),
+    enabled: !!user
+  });
+  const unreadCount = notifications.filter((item) => !item.readAt).length;
 
   const getPageTitle = () => {
     const path = location.pathname;
@@ -48,15 +59,53 @@ export function DashboardHeader() {
         <ThemeToggle />
 
         {/* Notifications */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground"
-        >
-          <Bell className="h-5 w-5" />
-          {/* Notification dot */}
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 ? (
+                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              ) : null}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-[360px] p-2" align="end" sideOffset={8}>
+            <DropdownMenuLabel className="px-3 py-2">Notifications</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {notifications.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-muted-foreground">No notifications yet.</div>
+            ) : (
+              notifications.slice(0, 8).map((notification) => (
+                <DropdownMenuItem
+                  key={notification.id}
+                  className="flex h-auto cursor-pointer items-start gap-3 rounded-lg px-3 py-3"
+                  onClick={async () => {
+                    if (!notification.readAt) {
+                      await api(`/api/notifications/${notification.id}/read`, { method: 'POST' });
+                      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+                    }
+                  }}
+                >
+                  <div className={`mt-1 h-2.5 w-2.5 rounded-full ${notification.readAt ? 'bg-muted-foreground/30' : 'bg-primary'}`} />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-medium">{notification.title}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {formatDistanceToNow(notification.createdAt, { addSuffix: true })}
+                      </span>
+                    </div>
+                    <p className="line-clamp-2 text-xs text-muted-foreground">{notification.message}</p>
+                  </div>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Separator orientation="vertical" className="h-5 mx-1" />
 

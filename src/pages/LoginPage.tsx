@@ -10,8 +10,11 @@ import { useGoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { useGoogleOAuthConfig } from '@/lib/google-oauth';
+import { usePageTheme } from '@/hooks/use-page-theme';
 
 export default function LoginPage() {
+    usePageTheme('dark');
+
     const navigate = useNavigate();
     const { loginWithEmail, loginWithGoogle, verifyOtp } = useAuth();
     const { settings } = useAppSettings();

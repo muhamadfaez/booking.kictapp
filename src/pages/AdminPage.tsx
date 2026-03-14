@@ -4,7 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { api } from '@/lib/api-client';
-import type { Booking, Venue } from '@shared/types';
+import type { Booking, Venue, User } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { ShieldCheck, Clock, History } from 'lucide-react';
@@ -23,10 +23,24 @@ export default function AdminPage() {
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
+  const { data: users = [] } = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: () => api<User[]>('/api/admin/users')
+  });
 
   const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
-  const pendingBookings = bookings?.filter(b => b.status === 'PENDING') ?? [];
-  const historicalBookings = bookings?.filter(b => b.status !== 'PENDING') ?? [];
+  const userMap = useMemo(
+    () => Object.fromEntries(users.map((user) => [user.id, { name: user.name, email: user.email, avatar: user.avatar }])),
+    [users]
+  );
+  const pendingBookings = useMemo(
+    () => [...(bookings?.filter(b => b.status === 'PENDING') ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    [bookings]
+  );
+  const historicalBookings = useMemo(
+    () => [...(bookings?.filter(b => b.status !== 'PENDING') ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    [bookings]
+  );
 
   return (
     <AppLayout container>
@@ -100,6 +114,7 @@ export default function AdminPage() {
                     isLoading={isLoading}
                     onActionSuccess={refetch}
                     venueMap={venueMap}
+                    userMap={userMap}
                   />
                 </CardContent>
               </Card>
@@ -126,6 +141,7 @@ export default function AdminPage() {
                     isLoading={isLoading}
                     onActionSuccess={refetch}
                     venueMap={venueMap}
+                    userMap={userMap}
                   />
                 </CardContent>
               </Card>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Table,
   TableBody,
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Check, X, Building, Calendar, Loader2, Clock, CheckCircle2, XCircle, FileText, Download, Eye } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -29,11 +30,13 @@ interface BookingRequestTableProps {
   isLoading: boolean;
   onActionSuccess: () => void;
   venueMap?: Record<string, string>;
+  userMap?: Record<string, { name: string; email: string; avatar?: string }>;
 }
 
-export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venueMap }: BookingRequestTableProps) {
+export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venueMap, userMap }: BookingRequestTableProps) {
   const [processingId, setProcessingId] = React.useState<string | null>(null);
   const [selectedBookingDocs, setSelectedBookingDocs] = useState<Booking | null>(null);
+  const queryClient = useQueryClient();
   const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -49,6 +52,13 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
       toast.success(`Booking ${status.toLowerCase()} successfully`, {
         description: status === 'APPROVED' ? 'The requester has been notified.' : 'The request has been declined.',
       });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['all-bookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookings-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-venues-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['venues-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      ]);
       onActionSuccess();
     } catch (err: any) {
       toast.error(err.message || "Failed to update status");
@@ -123,6 +133,9 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
               const statusConfig = getStatusConfig(booking.status);
               const StatusIcon = statusConfig.icon;
               const hasDocs = booking.documents?.proposalUrl || booking.documents?.approvalLetterUrl;
+              const requester = userMap?.[booking.userId];
+              const requesterName = requester?.name || booking.userName;
+              const requesterEmail = requester?.email || booking.userId;
 
               return (
                 <TableRow
@@ -133,13 +146,14 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9 border-2 border-border">
+                        <AvatarImage src={requester?.avatar} alt={requesterName} />
                         <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-bold text-xs">
-                          {booking.userName.charAt(0).toUpperCase()}
+                          {requesterName.charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm">{booking.userName}</span>
-                        <span className="text-xs text-muted-foreground">ID: {booking.userId}</span>
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate font-semibold text-sm">{requesterName}</span>
+                        <span className="truncate text-xs text-muted-foreground">{requesterEmail}</span>
                       </div>
                     </div>
                   </TableCell>

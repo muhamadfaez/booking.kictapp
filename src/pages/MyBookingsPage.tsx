@@ -45,6 +45,10 @@ export default function MyBookingsPage() {
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
   });
+  const sortedBookings = React.useMemo(
+    () => [...(bookings ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    [bookings]
+  );
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -104,7 +108,7 @@ export default function MyBookingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {bookingsLoading ? (
               [1, 2].map(i => <Skeleton key={i} className="h-32 w-full" />)
-            ) : bookings?.length === 0 ? (
+            ) : sortedBookings.length === 0 ? (
               <Card className="col-span-full py-10 border-dashed">
                 <CardContent className="flex flex-col items-center justify-center text-muted-foreground">
                   <Clock className="w-10 h-10 mb-2 opacity-20" />
@@ -112,7 +116,7 @@ export default function MyBookingsPage() {
                 </CardContent>
               </Card>
             ) : (
-              bookings.slice(0, 3).map((booking) => {
+              sortedBookings.slice(0, 3).map((booking) => {
                 const statusConfig = getStatusConfig(booking.status);
                 const StatusIcon = statusConfig.icon;
                 return (

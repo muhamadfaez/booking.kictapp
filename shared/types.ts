@@ -44,6 +44,24 @@ export interface Booking {
     proposalDownloadUrl?: string;
   };
 }
+export type NotificationType =
+  | 'BOOKING_CREATED'
+  | 'BOOKING_APPROVED'
+  | 'BOOKING_REJECTED'
+  | 'BOOKING_CANCELLED'
+  | 'BOOKING_UPDATED';
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  createdAt: number;
+  readAt?: number;
+  bookingId?: string;
+  venueId?: string;
+  link?: string;
+}
 export interface AppSettings {
   heroImageUrl?: string;
   appName?: string;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -26,6 +27,7 @@ interface CancelBookingDialogProps {
 
 export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venueMap }: CancelBookingDialogProps) {
     const [isCancelling, setIsCancelling] = React.useState(false);
+    const queryClient = useQueryClient();
     const parseLocalDate = (dateStr: string) => {
         const [year, month, day] = dateStr.split('-').map(Number);
         return new Date(year, month - 1, day);
@@ -39,6 +41,14 @@ export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venue
             await api(`/api/bookings/${booking.id}?userId=${booking.userId}`, {
                 method: 'DELETE'
             });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['my-bookings'] }),
+                queryClient.invalidateQueries({ queryKey: ['all-bookings'] }),
+                queryClient.invalidateQueries({ queryKey: ['bookings-schedule'] }),
+                queryClient.invalidateQueries({ queryKey: ['dashboard-venues-availability'] }),
+                queryClient.invalidateQueries({ queryKey: ['venues-availability'] }),
+                queryClient.invalidateQueries({ queryKey: ['notifications'] })
+            ]);
             toast.success("Booking cancelled successfully", {
                 description: "Your booking request has been cancelled."
             });

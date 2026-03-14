@@ -135,6 +135,20 @@ createRoot(document.getElementById('root')!).render(
 function AppRoot() {
   const { googleClientId, isGoogleOAuthEnabled } = useGoogleOAuthConfig();
 
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const register = async () => {
+      try {
+        await navigator.serviceWorker.register('/sw.js');
+      } catch (error) {
+        console.error('Service worker registration failed:', error);
+      }
+    };
+
+    register();
+  }, []);
+
   const app = (
     <ErrorBoundary>
       <AuthProvider>

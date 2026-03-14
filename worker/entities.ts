@@ -1,5 +1,5 @@
 import { IndexedEntity } from "./core-utils";
-import type { User, Venue, Booking, SessionSlot } from "@shared/types";
+import type { User, Venue, Booking, SessionSlot, Notification } from "@shared/types";
 import { MOCK_USERS, MOCK_VENUES, MOCK_BOOKINGS } from "@shared/mock-data";
 export class UserEntity extends IndexedEntity<User> {
   static readonly entityName = "user";
@@ -74,4 +74,16 @@ export class BookingEntity extends IndexedEntity<Booking> {
 
     return !conflict;
   }
+}
+export class NotificationEntity extends IndexedEntity<Notification> {
+  static readonly entityName = "notification";
+  static readonly indexName = "notifications";
+  static readonly initialState: Notification = {
+    id: "",
+    userId: "",
+    type: "BOOKING_CREATED",
+    title: "",
+    message: "",
+    createdAt: 0
+  };
 }

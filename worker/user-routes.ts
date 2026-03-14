@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
-import { UserEntity, VenueEntity, BookingEntity } from "./entities";
+import { UserEntity, VenueEntity, BookingEntity, NotificationEntity } from "./entities";
 import { ok, bad, notFound } from './core-utils';
-import type { Booking, SessionSlot, AppSettings, BookingStatus } from "@shared/types";
+import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue } from "@shared/types";
 import { verify } from 'hono/jwt';
 import { getRecentSignIns } from './signin-tracker';
+import { GoogleMailService } from './mail';
 
 const verifyAuthStrict = async (c: any, next: any) => {
   const authHeader = c.req.header('Authorization');
@@ -38,6 +39,13 @@ const BOOKING_LOCK_TTL_MS = 5000;
 const BOOKING_LOCK_MAX_RETRIES = 10;
 const BOOKING_LOCK_RETRY_DELAY_MS = 60;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/svg+xml'
+]);
 const ALLOWED_DOC_MIME_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -65,6 +73,104 @@ const bookingRange = (startTime?: string, endTime?: string, session?: SessionSlo
   if (startTime && endTime) return [toMins(startTime), toMins(endTime)];
   return sessionRange(session);
 };
+
+const formatBookingWindow = (booking: Pick<Booking, 'date' | 'startTime' | 'endTime' | 'session'>) => {
+  if (booking.startTime && booking.endTime) {
+    return `${booking.date} ${booking.startTime}-${booking.endTime}`;
+  }
+  return `${booking.date} ${booking.session?.replace('_', ' ') || 'N/A'}`;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+async function createNotification(env: Env, input: Omit<Notification, 'id' | 'createdAt'> & { createdAt?: number }) {
+  const notification: Notification = {
+    id: `notif_${crypto.randomUUID()}`,
+    createdAt: input.createdAt ?? Date.now(),
+    ...input
+  };
+  await NotificationEntity.create(env, notification);
+  return notification;
+}
+
+async function listAdminUsers(env: Env): Promise<User[]> {
+  await UserEntity.ensureSeed(env);
+  const users = await UserEntity.list(env);
+  return users.items.filter((user) => user.role === 'ADMIN');
+}
+
+async function sendEmailSafe(env: Env, to: string, subject: string, html: string) {
+  try {
+    const mailer = new GoogleMailService(env);
+    await mailer.sendEmail(to, subject, { html });
+  } catch (error) {
+    console.error('[MAIL] Failed to send email:', error);
+  }
+}
+
+async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User, venue: Venue) {
+  const admins = await listAdminUsers(env);
+  if (admins.length === 0) return;
+
+  const subject = `New booking request for ${venue.name}`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>New booking request submitted</h2>
+      <p><strong>Venue:</strong> ${escapeHtml(venue.name)}</p>
+      <p><strong>Requester:</strong> ${escapeHtml(requester.name)} (${escapeHtml(requester.email)})</p>
+      <p><strong>Schedule:</strong> ${escapeHtml(formatBookingWindow(booking))}</p>
+      <p><strong>Purpose:</strong> ${escapeHtml(booking.purpose)}</p>
+      <p><strong>Status:</strong> Pending approval</p>
+    </div>
+  `;
+
+  await Promise.all(
+    admins.map(async (admin) => {
+      await createNotification(env, {
+        userId: admin.id,
+        type: 'BOOKING_CREATED',
+        title: 'New booking request',
+        message: `${requester.name} requested ${venue.name} for ${formatBookingWindow(booking)}.`,
+        bookingId: booking.id,
+        venueId: booking.venueId,
+        link: '/admin'
+      });
+      await sendEmailSafe(env, admin.email, subject, html);
+    })
+  );
+}
+
+async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: User, venue: Venue, status: 'APPROVED' | 'REJECTED') {
+  const statusLabel = status === 'APPROVED' ? 'approved' : 'rejected';
+  const title = status === 'APPROVED' ? 'Booking approved' : 'Booking rejected';
+  const subject = `${venue.name} booking ${statusLabel}`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Your booking has been ${statusLabel}</h2>
+      <p><strong>Venue:</strong> ${escapeHtml(venue.name)}</p>
+      <p><strong>Schedule:</strong> ${escapeHtml(formatBookingWindow(booking))}</p>
+      <p><strong>Purpose:</strong> ${escapeHtml(booking.purpose)}</p>
+      <p><strong>Status:</strong> ${escapeHtml(status)}</p>
+    </div>
+  `;
+
+  await createNotification(env, {
+    userId: requester.id,
+    type: status === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_REJECTED',
+    title,
+    message: `${venue.name} on ${formatBookingWindow(booking)} was ${statusLabel}.`,
+    bookingId: booking.id,
+    venueId: booking.venueId,
+    link: '/bookings'
+  });
+  await sendEmailSafe(env, requester.email, subject, html);
+}
 
 async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () => Promise<T>): Promise<T> {
   const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
@@ -436,6 +542,29 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     });
   });
 
+  app.get('/api/notifications', verifyAuthStrict, async (c) => {
+    const user = c.get('user');
+    const list = await NotificationEntity.list(c.env);
+    const items = list.items
+      .filter((item) => item.userId === user.sub)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    return ok(c, items);
+  });
+
+  app.post('/api/notifications/:id/read', verifyAuthStrict, async (c) => {
+    const user = c.get('user');
+    const notification = new NotificationEntity(c.env, c.req.param('id'));
+    if (!await notification.exists()) return notFound(c, 'Notification not found');
+
+    const current = await notification.getState();
+    if (current.userId !== user.sub) {
+      return bad(c, 'Unauthorized notification access');
+    }
+
+    await notification.patch({ readAt: Date.now() });
+    return ok(c, await notification.getState());
+  });
+
   app.post('/api/bookings', verifyAuthStrict, async (c) => {
     const body = await c.req.json() as Partial<Booking>;
     const user = c.get('user');
@@ -443,7 +572,8 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     // Use userId from token, ignore body userId
     const userId = user.sub;
-    const userName = user.email.split('@')[0]; // Simplify or fetch user details if needed
+    const requester = await new UserEntity(c.env, userId).getState();
+    const userName = requester.name || user.email.split('@')[0];
 
     // Validation
     if (!venueId || !date || (!session && (!startTime || !endTime)) || !purpose) {
@@ -471,7 +601,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
           id: crypto.randomUUID(),
           venueId,
           userId,
-          userName, // TODO: Fetch real name from UserEntity if important
+          userName,
           date,
           session: session as SessionSlot,
           startTime,
@@ -479,10 +609,22 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
           status: 'PENDING',
           createdAt: Date.now(),
           purpose,
+          programType: body.programType,
           documents: body.documents
         };
 
         return BookingEntity.create(c.env, newBooking);
+      });
+
+      await sendAdminBookingEmail(c.env, created, requester, venueData);
+      await createNotification(c.env, {
+        userId,
+        type: 'BOOKING_CREATED',
+        title: 'Booking submitted',
+        message: `Your request for ${venueData.name} on ${formatBookingWindow(created)} was submitted.`,
+        bookingId: created.id,
+        venueId: created.venueId,
+        link: '/bookings'
       });
 
       return ok(c, created);
@@ -497,16 +639,18 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     const { status } = await c.req.json() as { status: string };
     const booking = new BookingEntity(c.env, id);
     if (!await booking.exists()) return notFound(c, 'Booking not found');
+    const currentBooking = await booking.getState();
+    const requester = await new UserEntity(c.env, currentBooking.userId).getState();
+    const venue = await new VenueEntity(c.env, currentBooking.venueId).getState();
 
     // Privacy & Cleanup: If rejected, delete associated documents
     if (status === 'REJECTED') {
-      const bookingData = await booking.getState();
-      if (bookingData.documents) {
+      if (currentBooking.documents) {
         try {
           const { GoogleDriveService } = await import('./drive');
           const drive = new GoogleDriveService(c.env);
 
-          const docUrls = Object.values(bookingData.documents).filter(url => typeof url === 'string') as string[];
+          const docUrls = Object.values(currentBooking.documents).filter(url => typeof url === 'string') as string[];
 
           for (const docUrl of docUrls) {
             const match = docUrl.match(/\/api\/images\/([a-zA-Z0-9-_]+)/);
@@ -522,7 +666,13 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
 
     await booking.patch({ status: status as any });
-    return ok(c, await booking.getState());
+    const updatedBooking = await booking.getState();
+
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      await sendRequesterStatusUpdate(c.env, updatedBooking, requester, venue, status);
+    }
+
+    return ok(c, updatedBooking);
   });
 
   app.delete('/api/bookings/:id', verifyAuthStrict, async (c) => {
@@ -545,6 +695,19 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
 
     await booking.patch({ status: 'CANCELLED' });
+    const venue = await new VenueEntity(c.env, bookingData.venueId).getState();
+    const admins = await listAdminUsers(c.env);
+    await Promise.all(admins.map((admin) =>
+      createNotification(c.env, {
+        userId: admin.id,
+        type: 'BOOKING_CANCELLED',
+        title: 'Booking cancelled',
+        message: `${bookingData.userName} cancelled ${venue.name} for ${formatBookingWindow(bookingData)}.`,
+        bookingId: bookingData.id,
+        venueId: bookingData.venueId,
+        link: '/admin/history'
+      })
+    ));
     return ok(c, await booking.getState());
   });
 
@@ -588,8 +751,8 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
         return bad(c, 'File too large. Maximum allowed size is 10MB.');
       }
 
-      if (docType === 'HERO' || docType === 'APP_ICON') {
-        if (!mimeType.startsWith('image/')) {
+      if (docType === 'HERO' || docType === 'APP_ICON' || docType === 'VENUE_IMAGE') {
+        if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
           return bad(c, 'Image upload accepts image files only.');
         }
       } else if (!ALLOWED_DOC_MIME_TYPES.has(mimeType)) {

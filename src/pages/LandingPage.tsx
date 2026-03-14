@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { useAppSettings } from '@/hooks/useAppSettings';
+import { usePageTheme } from '@/hooks/use-page-theme';
 import { api } from '@/lib/api-client';
 import type { Venue } from '@shared/types';
 
@@ -53,6 +54,8 @@ const operationalSignals = [
 ];
 
 export default function LandingPage() {
+  usePageTheme('dark');
+
   const { user } = useAuth();
   const navigate = useNavigate();
   const { settings } = useAppSettings();

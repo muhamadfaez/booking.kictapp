@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -32,6 +33,7 @@ const sessionOptions = [
 
 export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWizardProps) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>('DETAILS');
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [startTime, setStartTime] = useState('08:00');
@@ -138,6 +140,14 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           }
         })
       });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['my-bookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-bookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookings-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-venues-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['venues-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      ]);
       toast.success("Booking Request Submitted!", {
         description: "Documents uploaded and request pending approval.",
         icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />
@@ -214,7 +224,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-[600px] md:max-w-[700px] max-h-[90vh] overflow-y-auto p-0 gap-0 transition-all duration-300">
+      <DialogContent className="w-[96vw] sm:max-w-[600px] md:max-w-[700px] max-h-[90vh] overflow-y-auto p-0 gap-0 transition-all duration-300">
         <div className="bg-gradient-subtle p-5 border-b border-border/50">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{venue.name}</DialogTitle>
@@ -224,42 +234,42 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           </DialogHeader>
 
           {/* Steps */}
-          <div className="flex items-center gap-2 mt-5 text-xs font-semibold">
+          <div className="mt-5 flex flex-wrap items-center gap-2 text-xs font-semibold">
             <div className={`px-3 py-1 rounded-full ${step === 'DETAILS' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>1. Details</div>
-            <div className="w-4 h-px bg-border"></div>
+            <div className="hidden sm:block w-4 h-px bg-border"></div>
             <div className={`px-3 py-1 rounded-full ${step === 'DOCS' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>2. Documents</div>
-            <div className="w-4 h-px bg-border"></div>
+            <div className="hidden sm:block w-4 h-px bg-border"></div>
             <div className={`px-3 py-1 rounded-full ${step === 'REVIEW' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>3. Review</div>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {step === 'DETAILS' && (
-            <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
+            <div className="grid gap-5 md:grid-cols-2 md:gap-6 animate-fade-in">
               <div className="space-y-4">
                 <Label>Date</Label>
-                <div className="border rounded-xl p-3 flex justify-center">
-                  <Calendar mode="single" selected={date} onSelect={setDate} className="rounded-md" disabled={(d) => d < new Date()} />
+                <div className="overflow-x-auto border rounded-xl p-2 sm:p-3 flex justify-center">
+                  <Calendar mode="single" selected={date} onSelect={setDate} className="rounded-md min-w-[280px]" disabled={(d) => d < new Date()} />
                 </div>
               </div>
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Start Time</Label>
-                    <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                    <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="h-11" />
                   </div>
                   <div className="space-y-2">
                     <Label>End Time</Label>
-                    <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+                    <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="h-11" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Purpose</Label>
-                  <Input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Event Name" />
+                  <Input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Event Name" className="h-11" />
                 </div>
                 <div className="space-y-2">
                   <Label>Program Type</Label>
-                  <RadioGroup value={programType} onValueChange={(v) => setProgramType(v as ProgramType)} className="flex gap-4">
+                  <RadioGroup value={programType} onValueChange={(v) => setProgramType(v as ProgramType)} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="STUDENT" id="r1" />
                       <Label htmlFor="r1">Student</Label>
@@ -305,7 +315,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           {step === 'REVIEW' && (
             <div className="space-y-6 animate-fade-in">
               <div className="bg-muted/50 p-4 rounded-xl space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                   <div>
                     <p className="text-muted-foreground font-medium mb-1">Venue</p>
                     <p className="font-semibold">{venue.name}</p>
@@ -350,8 +360,8 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           )}
         </div>
 
-        <DialogFooter className="p-5 pt-0">
-          <div className="flex w-full justify-between gap-2">
+        <DialogFooter className="p-4 pt-0 sm:p-5 sm:pt-0">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-between">
             {step !== 'DETAILS' && (
               <Button variant="outline" onClick={() => setStep(step === 'REVIEW' ? 'DOCS' : 'DETAILS')} disabled={isSubmitting}>
                 Back

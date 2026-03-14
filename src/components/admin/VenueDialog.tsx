@@ -69,6 +69,10 @@ export function VenueDialog({ venue, isOpen, onClose, onSuccess }: VenueDialogPr
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error("Please select a valid image file");
+            return;
+        }
 
         const toastId = toast.loading("Compressing and uploading image...");
         try {

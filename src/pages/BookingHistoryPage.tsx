@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { api } from '@/lib/api-client';
-import type { Booking, Venue } from '@shared/types';
+import type { Booking, Venue, User } from '@shared/types';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,7 +28,16 @@ export default function BookingHistoryPage() {
         queryFn: () => api<Venue[]>('/api/venues')
     });
 
+    const { data: users = [] } = useQuery({
+        queryKey: ['admin-users'],
+        queryFn: () => api<User[]>('/api/admin/users')
+    });
+
     const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
+    const userMap = useMemo(
+        () => Object.fromEntries(users.map((user) => [user.id, { name: user.name, email: user.email, avatar: user.avatar }])),
+        [users]
+    );
 
     // Filter bookings based on search and status
     const filteredBookings = useMemo(() => {
@@ -217,6 +226,7 @@ export default function BookingHistoryPage() {
                             isLoading={isLoading}
                             onActionSuccess={refetch}
                             venueMap={venueMap}
+                            userMap={userMap}
                         />
                     </CardContent>
                 </Card>

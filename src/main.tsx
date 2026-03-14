@@ -26,9 +26,9 @@ import BookingHistoryPage from '@/pages/BookingHistoryPage'
 import SchedulePage from '@/pages/SchedulePage'
 import { AuthProvider } from '@/lib/mock-auth'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { useGoogleOAuthConfig } from '@/lib/google-oauth'
 
 const queryClient = new QueryClient();
-const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 const router = createBrowserRouter([
   {
@@ -126,15 +126,27 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <QueryClientProvider client={queryClient}>
-        <ErrorBoundary>
-          <AuthProvider>
-            <RouterProvider router={router} />
-            <Toaster richColors position="top-center" />
-          </AuthProvider>
-        </ErrorBoundary>
-      </QueryClientProvider>
-    </GoogleOAuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AppRoot />
+    </QueryClientProvider>
   </StrictMode>,
 )
+
+function AppRoot() {
+  const { googleClientId, isGoogleOAuthEnabled } = useGoogleOAuthConfig();
+
+  const app = (
+    <ErrorBoundary>
+      <AuthProvider>
+        <RouterProvider router={router} />
+        <Toaster richColors position="top-center" />
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+
+  if (!isGoogleOAuthEnabled) {
+    return app;
+  }
+
+  return <GoogleOAuthProvider clientId={googleClientId}>{app}</GoogleOAuthProvider>;
+}

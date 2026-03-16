@@ -21,6 +21,7 @@ import {
 import { Users, Activity, UserPlus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 type SignInRecord = {
   userId: string;
@@ -38,6 +39,7 @@ type SignInSummary = {
 };
 
 export default function AdminUsersPage() {
+  usePageTitle('Admin Users');
   const [draftByUserId, setDraftByUserId] = useState<Record<string, { name: string; role: 'USER' | 'ADMIN' }>>({});
   const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'USER' as 'USER' | 'ADMIN' });
   const [creatingUser, setCreatingUser] = useState(false);

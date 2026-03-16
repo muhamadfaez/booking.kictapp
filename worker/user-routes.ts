@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, VenueEntity, BookingEntity, NotificationEntity } from "./entities";
-import { ok, bad, notFound } from './core-utils';
+import { ok, bad, notFound, Index } from './core-utils';
 import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue } from "@shared/types";
 import { verify } from 'hono/jwt';
 import { getRecentSignIns } from './signin-tracker';
@@ -274,8 +274,20 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   // VENUES (Public Read)
   app.get('/api/venues', async (c) => {
     await VenueEntity.ensureSeed(c.env);
-    const list = await VenueEntity.list(c.env);
-    return ok(c, list.items);
+    const venueIndex = new Index<string>(c.env, VenueEntity.indexName);
+    const ids = await venueIndex.list();
+    const items: Venue[] = [];
+
+    for (const id of ids) {
+      const venue = new VenueEntity(c.env, id);
+      if (await venue.exists()) {
+        items.push(await venue.getState());
+      } else {
+        await venueIndex.remove(id);
+      }
+    }
+
+    return ok(c, items);
   });
 
   app.get('/api/venues/availability', async (c) => {

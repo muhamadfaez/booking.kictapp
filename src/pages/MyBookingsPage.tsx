@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePageTitle } from '@/hooks/use-page-title';
 import {
   CalendarDays,
   Clock,
@@ -29,6 +30,7 @@ import {
 } from '@/components/ui/dialog';
 
 export default function MyBookingsPage() {
+  usePageTitle('My Bookings');
   const { user } = useAuth();
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
   const parseLocalDate = (dateStr: string) => {

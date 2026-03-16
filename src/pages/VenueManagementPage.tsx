@@ -10,8 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Building2, MapPin, Users, Plus, Edit, Trash2, Sparkles } from 'lucide-react';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function VenueManagementPage() {
+    usePageTitle('Venue Management');
     const { data: venues, isLoading, refetch } = useQuery({
         queryKey: ['venues'],
         queryFn: () => api<Venue[]>('/api/venues')

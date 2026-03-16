@@ -9,8 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { History, Search, Filter, Download, RefreshCw } from 'lucide-react';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function BookingHistoryPage() {
+    usePageTitle('Booking History');
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const parseLocalDate = (dateStr: string) => {

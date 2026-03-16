@@ -8,8 +8,10 @@ import type { Booking, Venue, User } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { ShieldCheck, Clock, History } from 'lucide-react';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function AdminPage() {
+  usePageTitle('Admin');
   const { data: bookings, isLoading, refetch } = useQuery({
     queryKey: ['all-bookings'],
     queryFn: () => api<Booking[]>('/api/bookings')

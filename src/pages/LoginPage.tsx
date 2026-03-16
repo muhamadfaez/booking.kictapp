@@ -11,9 +11,11 @@ import { toast } from 'sonner';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { useGoogleOAuthConfig } from '@/lib/google-oauth';
 import { usePageTheme } from '@/hooks/use-page-theme';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function LoginPage() {
     usePageTheme('dark');
+    usePageTitle('Sign In');
 
     const navigate = useNavigate();
     const { loginWithEmail, loginWithGoogle, verifyOtp } = useAuth();

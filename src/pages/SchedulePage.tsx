@@ -6,8 +6,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { CalendarView } from '@/components/schedule/CalendarView';
 import { Loader2 } from 'lucide-react';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function SchedulePage() {
+    usePageTitle('Schedule');
     const { user } = useAuth();
     const [date, setDate] = useState<Date | undefined>(new Date());
 

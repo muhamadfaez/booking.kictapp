@@ -9,8 +9,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CalendarView } from '@/components/schedule/CalendarView';
 import { Building2, Loader2, MapPin, Users } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 export default function VenuePage() {
+  usePageTitle('Venues');
   const { user } = useAuth();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedVenueId, setSelectedVenueId] = useState<string>('');

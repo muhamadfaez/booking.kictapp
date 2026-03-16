@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2 } from 'lucide-react';
+import { usePageTitle } from '@/hooks/use-page-title';
 
 type AvailabilityResult = {
   availableVenueIds: string[];
@@ -19,6 +20,7 @@ type AvailabilityResult = {
 };
 
 export default function DashboardPage() {
+  usePageTitle('Dashboard');
   const { user } = useAuth();
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));

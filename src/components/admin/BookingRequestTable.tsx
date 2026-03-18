@@ -243,7 +243,7 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
                         onClick={() => setBookingToCancel(booking)}
                       >
                         <X className="h-3.5 w-3.5 mr-1" />
-                        Cancel Booking
+                        Cancel
                       </Button>
                     ) : (
                       <span className="text-xs text-muted-foreground italic">Processed</span>

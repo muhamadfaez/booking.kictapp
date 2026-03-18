@@ -58,6 +58,13 @@ const MAX_STREAM_ITEMS = 250;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type StoredDoc<T> = { v: number; data: T };
+type BookingLock = { token: string; expiresAt: number };
+type RejectedResult = PromiseRejectedResult;
+
+const isRejectedResult = (result: PromiseSettledResult<unknown>): result is RejectedResult =>
+  result.status === 'rejected';
+
 const toMins = (time: string) => {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
@@ -97,9 +104,9 @@ async function appendToStream<T>(env: Env, key: string, item: T) {
   const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
 
   for (let attempt = 0; attempt < 5; attempt++) {
-    const current = await globalDO.getDoc<T[]>(key);
+    const current = await globalDO.getDoc(key) as StoredDoc<T[]> | null;
     const version = current?.v ?? 0;
-    const items = current?.data ?? [];
+    const items: T[] = current?.data ?? [];
     const next = [item, ...items].slice(0, MAX_STREAM_ITEMS);
     const result = await globalDO.casPut(key, version, next);
     if (result.ok) return;
@@ -110,7 +117,7 @@ async function appendToStream<T>(env: Env, key: string, item: T) {
 
 async function readStream<T>(env: Env, key: string): Promise<T[]> {
   const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
-  const current = await globalDO.getDoc<T[]>(key);
+  const current = await globalDO.getDoc(key) as StoredDoc<T[]> | null;
   return current?.data ?? [];
 }
 
@@ -123,9 +130,9 @@ async function updateStreamItem<T extends { id: string }>(
   const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
 
   for (let attempt = 0; attempt < 5; attempt++) {
-    const current = await globalDO.getDoc<T[]>(key);
+    const current = await globalDO.getDoc(key) as StoredDoc<T[]> | null;
     const version = current?.v ?? 0;
-    const items = current?.data ?? [];
+    const items: T[] = current?.data ?? [];
     const index = items.findIndex((item) => item.id === id);
     if (index === -1) return false;
     const next = [...items];
@@ -152,7 +159,7 @@ async function createNotification(env: Env, input: Omit<Notification, 'id' | 'cr
       notification
     )
   ]);
-  const failures = results.filter((result) => result.status === 'rejected');
+  const failures = results.filter(isRejectedResult);
   if (failures.length > 0) {
     console.error('[NOTIFICATION] Persist failure', {
       id: notification.id,
@@ -160,7 +167,7 @@ async function createNotification(env: Env, input: Omit<Notification, 'id' | 'cr
       audienceRole: notification.audienceRole,
       type: notification.type,
       title: notification.title,
-      failures: failures.map((result) => result.status === 'rejected' ? String(result.reason) : '')
+      failures: failures.map((result) => String(result.reason))
     });
   } else {
     console.log('[NOTIFICATION] Persisted', {
@@ -184,7 +191,7 @@ async function createAuditEntry(env: Env, input: Omit<AuditTrailEntry, 'id' | 'c
     AuditTrailEntity.create(env, entry),
     appendToStream(env, AUDIT_STREAM_KEY, entry)
   ]);
-  const failures = results.filter((result) => result.status === 'rejected');
+  const failures = results.filter(isRejectedResult);
   if (failures.length > 0) {
     console.error('[AUDIT] Persist failure', {
       id: entry.id,
@@ -192,7 +199,7 @@ async function createAuditEntry(env: Env, input: Omit<AuditTrailEntry, 'id' | 'c
       actorEmail: entry.actorEmail,
       targetType: entry.targetType,
       targetId: entry.targetId,
-      failures: failures.map((result) => result.status === 'rejected' ? String(result.reason) : '')
+      failures: failures.map((result) => String(result.reason))
     });
   } else {
     console.log('[AUDIT] Persisted', {
@@ -514,7 +521,7 @@ async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () 
 
   for (let attempt = 0; attempt < BOOKING_LOCK_MAX_RETRIES; attempt++) {
     const now = Date.now();
-    const doc = await globalDO.getDoc<{ token: string; expiresAt: number }>(lockKey);
+    const doc = await globalDO.getDoc(lockKey) as StoredDoc<BookingLock> | null;
     const currentVersion = doc?.v ?? 0;
     const currentData = doc?.data;
 
@@ -538,7 +545,7 @@ async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () 
   try {
     return await fn();
   } finally {
-    const doc = await globalDO.getDoc<{ token: string; expiresAt: number }>(lockKey);
+    const doc = await globalDO.getDoc(lockKey) as StoredDoc<BookingLock> | null;
     if (doc?.data?.token === ownerToken) {
       await globalDO.casPut(lockKey, doc.v, { token: 'released', expiresAt: 0 });
     }
@@ -612,7 +619,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   // SETTINGS (Public Read)
   app.get('/api/settings', async (c) => {
     const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
-    const doc = await globalDO.getDoc<AppSettings>('settings:app');
+    const doc = await globalDO.getDoc('settings:app') as StoredDoc<AppSettings> | null;
     return ok(c, doc?.data ?? {});
   });
 
@@ -625,8 +632,8 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
     for (let i = 0; i < 3; i++) {
-      const doc = await globalDO.getDoc<AppSettings>('settings:app');
-      const current = doc?.data ?? {};
+      const doc = await globalDO.getDoc('settings:app') as StoredDoc<AppSettings> | null;
+      const current: AppSettings = doc?.data ?? {};
       const version = doc?.v ?? 0;
 
       const res = await globalDO.casPut('settings:app', version, { ...current, heroImageUrl });
@@ -648,8 +655,8 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
     for (let i = 0; i < 3; i++) {
-      const doc = await globalDO.getDoc<AppSettings>('settings:app');
-      const current = doc?.data ?? {};
+      const doc = await globalDO.getDoc('settings:app') as StoredDoc<AppSettings> | null;
+      const current: AppSettings = doc?.data ?? {};
       const version = doc?.v ?? 0;
       const res = await globalDO.casPut('settings:app', version, { ...current, ...updates });
       if (res.ok) {

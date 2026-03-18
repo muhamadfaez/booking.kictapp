@@ -99,8 +99,12 @@ export function CancelBookingDialog({ booking, isOpen, onClose, onSuccess, venue
                     <div className="flex items-center gap-3">
                         <Clock className="w-4 h-4 text-muted-foreground" />
                         <div>
-                            <p className="text-sm text-muted-foreground">Session</p>
-                            <p className="font-semibold">{booking.session.replace('_', ' ')}</p>
+                            <p className="text-sm text-muted-foreground">Time</p>
+                            <p className="font-semibold">
+                                {booking.startTime && booking.endTime
+                                    ? `${booking.startTime} - ${booking.endTime}`
+                                    : booking.session ? booking.session.replace('_', ' ') : 'N/A'}
+                            </p>
                         </div>
                     </div>
 

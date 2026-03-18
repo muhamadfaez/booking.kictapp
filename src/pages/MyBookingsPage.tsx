@@ -28,11 +28,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { CancelBookingDialog } from '@/components/booking/CancelBookingDialog';
 
 export default function MyBookingsPage() {
   usePageTitle('My Bookings');
   const { user } = useAuth();
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
+  const [bookingToCancel, setBookingToCancel] = React.useState<Booking | null>(null);
   const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -41,7 +44,10 @@ export default function MyBookingsPage() {
   const { data: bookings, isLoading: bookingsLoading } = useQuery({
     queryKey: ['my-bookings', user?.id],
     queryFn: () => api<Booking[]>(`/api/bookings?userId=${user?.id}`),
-    enabled: !!user?.id
+    enabled: !!user?.id,
+    refetchOnWindowFocus: true,
+    refetchInterval: user?.id ? 15000 : false,
+    staleTime: 0
   });
   const { data: venues = [] } = useQuery({
     queryKey: ['venues'],
@@ -50,6 +56,10 @@ export default function MyBookingsPage() {
   const sortedBookings = React.useMemo(
     () => [...(bookings ?? [])].sort((a, b) => b.createdAt - a.createdAt),
     [bookings]
+  );
+  const venueMap = React.useMemo(
+    () => Object.fromEntries(venues.map((venue) => [venue.id, venue.name])),
+    [venues]
   );
 
   const getStatusConfig = (status: string) => {
@@ -118,7 +128,7 @@ export default function MyBookingsPage() {
                 </CardContent>
               </Card>
             ) : (
-              sortedBookings.slice(0, 3).map((booking) => {
+              sortedBookings.map((booking) => {
                 const statusConfig = getStatusConfig(booking.status);
                 const StatusIcon = statusConfig.icon;
                 return (
@@ -146,6 +156,19 @@ export default function MyBookingsPage() {
                           ? `${booking.startTime} - ${booking.endTime}`
                           : booking.session ? booking.session.replace('_', ' ') : 'N/A'}
                       </div>
+                      {booking.status === 'PENDING' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 w-full"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setBookingToCancel(booking);
+                          }}
+                        >
+                          Cancel Booking
+                        </Button>
+                      ) : null}
                     </CardContent>
                   </Card>
                 );
@@ -220,10 +243,31 @@ export default function MyBookingsPage() {
                   </div>
                 </div>
               )}
+
+              {selectedBooking.status === 'PENDING' ? (
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  onClick={() => setBookingToCancel(selectedBooking)}
+                >
+                  Cancel Booking
+                </Button>
+              ) : null}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <CancelBookingDialog
+        booking={bookingToCancel}
+        isOpen={!!bookingToCancel}
+        onClose={() => setBookingToCancel(null)}
+        onSuccess={() => {
+          setBookingToCancel(null);
+          setSelectedBooking(null);
+        }}
+        venueMap={venueMap}
+      />
     </AppLayout>
   );
 }

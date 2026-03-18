@@ -5,52 +5,36 @@ import { VenueCard } from '@/components/booking/VenueCard';
 import { BookingWizard } from '@/components/booking/BookingWizard';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
-import type { Venue, SessionSlot, Booking } from '@shared/types';
+import type { Venue, Booking } from '@shared/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2 } from 'lucide-react';
 import { usePageTitle } from '@/hooks/use-page-title';
-
-type AvailabilityResult = {
-  availableVenueIds: string[];
-  unavailableVenueIds: string[];
-};
 
 export default function DashboardPage() {
   usePageTitle('Dashboard');
   const { user } = useAuth();
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [selectedSession, setSelectedSession] = useState<SessionSlot>('MORNING');
   const { data: venues, isLoading: venuesLoading } = useQuery({
     queryKey: ['venues'],
-    queryFn: () => api<Venue[]>('/api/venues')
-  });
-  const { data: availability } = useQuery({
-    queryKey: ['dashboard-venues-availability', selectedDate, selectedSession],
-    queryFn: () =>
-      api<AvailabilityResult>(
-        `/api/venues/availability?date=${encodeURIComponent(selectedDate)}&session=${encodeURIComponent(selectedSession)}`
-      )
+    queryFn: () => api<Venue[]>('/api/venues'),
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 0
   });
   const { data: bookings = [], refetch: refetchBookings } = useQuery({
     queryKey: ['my-bookings', user?.id],
     queryFn: () => api<Booking[]>(`/api/bookings?userId=${user?.id}`),
-    enabled: !!user?.id
+    enabled: !!user?.id,
+    refetchOnWindowFocus: true,
+    refetchInterval: user?.id ? 15000 : false,
+    staleTime: 0
   });
 
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;
   const approvedCount = bookings.filter((b) => b.status === 'APPROVED').length;
   const totalCount = bookings.length;
-
-  const availableVenueIds = new Set(availability?.availableVenueIds ?? []);
-  const displayVenues = (venues ?? []).filter((v) => {
-    if (v.isAvailable === false) return true;
-    return availability ? availableVenueIds.has(v.id) : true;
-  });
+  const displayVenues = venues ?? [];
 
   return (
     <AppLayout container>

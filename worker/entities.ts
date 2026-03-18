@@ -22,7 +22,7 @@ export class BookingEntity extends IndexedEntity<Booking> {
   static readonly entityName = "booking";
   static readonly indexName = "bookings";
   static readonly initialState: Booking = {
-    id: "", venueId: "", userId: "", userName: "", date: "",
+    id: "", venueId: "", userId: "", userName: "", userEmail: "", date: "",
     session: "MORNING", status: "PENDING", createdAt: 0, purpose: ""
   };
   static seedData = MOCK_BOOKINGS;
@@ -81,6 +81,7 @@ export class NotificationEntity extends IndexedEntity<Notification> {
   static readonly initialState: Notification = {
     id: "",
     userId: "",
+    audienceRole: "USER",
     type: "BOOKING_CREATED",
     title: "",
     message: "",

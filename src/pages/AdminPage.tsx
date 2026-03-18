@@ -10,9 +10,11 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { ShieldCheck, Clock, History, Bell } from 'lucide-react';
 import { usePageTitle } from '@/hooks/use-page-title';
 import { formatDistanceToNow } from 'date-fns';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function AdminPage() {
   usePageTitle('Admin');
+  const { user } = useAuth();
   const { data: bookings, isLoading, refetch } = useQuery({
     queryKey: ['all-bookings'],
     queryFn: () => api<Booking[]>('/api/bookings')
@@ -27,8 +29,12 @@ export default function AdminPage() {
     queryFn: () => api<User[]>('/api/admin/users')
   });
   const { data: notifications = [] } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => api<Notification[]>('/api/notifications')
+    queryKey: ['notifications', user?.id, user?.role],
+    queryFn: () => api<Notification[]>('/api/notifications'),
+    enabled: !!user,
+    refetchOnWindowFocus: true,
+    refetchInterval: user?.role === 'ADMIN' ? 15000 : false,
+    staleTime: 0
   });
 
   const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);

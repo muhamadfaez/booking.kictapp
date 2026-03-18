@@ -23,6 +23,10 @@ interface BookingWizardProps {
 
 type Step = 'DETAILS' | 'DOCS' | 'REVIEW';
 type ProgramType = 'STUDENT' | 'STAFF' | 'GUEST';
+type AvailabilityResult = {
+  availableVenueIds: string[];
+  unavailableVenueIds: string[];
+};
 
 const sessionOptions = [
   { value: 'MORNING', label: 'Morning', time: '08:00 - 12:00' },
@@ -47,13 +51,13 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!venue) return null;
-
   const orderedDates = useMemo(
     () => [...selectedDates].sort((a, b) => a.getTime() - b.getTime()),
     [selectedDates]
   );
   const primaryDate = orderedDates[0];
+
+  if (!venue) return null;
 
   const handleNext = async () => {
     if (step === 'DETAILS') {
@@ -65,6 +69,18 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
         toast.error("End time must be after start time");
         return;
       }
+
+      for (const selectedDate of orderedDates) {
+        const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+        const availability = await api<AvailabilityResult>(
+          `/api/venues/availability?date=${encodeURIComponent(formattedDate)}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`
+        );
+        if (!availability.availableVenueIds.includes(venue.id)) {
+          toast.error(`"${venue.name}" is not available on ${format(selectedDate, 'dd MMM yyyy')} for ${startTime}-${endTime}.`);
+          return;
+        }
+      }
+
       setStep('DOCS');
     } else if (step === 'DOCS') {
       // Validate Docs
@@ -109,10 +125,14 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     try {
+      const fallbackEmail = localStorage.getItem('nexus_user_email') || '';
+      const requesterEmail = user?.email || fallbackEmail;
+      const requesterName = user?.name || (requesterEmail ? requesterEmail.split('@')[0] : '');
+
       const baseMeta = {
         purpose,
         date: format(primaryDate!, 'yyyy-MM-dd'),
-        userName: user?.name || 'UnknownUser'
+        userName: requesterName || 'UnknownUser'
       };
 
       // Upload Files
@@ -135,6 +155,8 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           endTime,
           purpose,
           programType,
+          requesterEmail,
+          requesterName,
           documents: {
             proposalUrl: proposalDocs.url,
             proposalDownloadUrl: proposalDocs.downloadUrl,
@@ -231,6 +253,9 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
         <div className="bg-gradient-subtle p-5 border-b border-border/50 text-center sm:text-left">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{venue.name}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Complete the booking details, upload required documents, and review your request before submission.
+            </DialogDescription>
           </DialogHeader>
 
           {/* Steps */}

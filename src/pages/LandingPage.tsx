@@ -137,6 +137,7 @@ export default function LandingPage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('11:00');
+  const [appliedFilter, setAppliedFilter] = useState<{ date: string; startTime: string; endTime: string } | null>(null);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -158,22 +159,24 @@ export default function LandingPage() {
   const { data: venues = [], isLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues'),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
     gcTime: 30 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000
   });
 
   const { data: availability } = useQuery({
-    queryKey: ['venues-availability', date, startTime, endTime],
+    queryKey: ['venues-availability', appliedFilter?.date, appliedFilter?.startTime, appliedFilter?.endTime],
     queryFn: () => api<AvailabilityResult>(
-      `/api/venues/availability?date=${encodeURIComponent(date)}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`
+      `/api/venues/availability?date=${encodeURIComponent(appliedFilter!.date)}&startTime=${encodeURIComponent(appliedFilter!.startTime)}&endTime=${encodeURIComponent(appliedFilter!.endTime)}`
     ),
-    enabled: venues.length > 0 && startTime < endTime,
-    staleTime: 60 * 1000,
+    enabled: venues.length > 0 && !!appliedFilter && appliedFilter.startTime < appliedFilter.endTime,
+    staleTime: 0,
     gcTime: 10 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchInterval: 10000
   });
 
   const availableSet = useMemo(() => new Set(availability?.availableVenueIds ?? []), [availability?.availableVenueIds]);
@@ -188,11 +191,12 @@ export default function LandingPage() {
   }, [deferredSearch, venues]);
 
   const displayedVenues = useMemo(() => {
+    if (!appliedFilter) return filteredVenues;
     return filteredVenues.filter((v) => {
-      if (v.isAvailable === false) return true;
+      if (v.isAvailable === false) return false;
       return availableSet.size === 0 || availableSet.has(v.id);
     });
-  }, [availableSet, filteredVenues]);
+  }, [appliedFilter, availableSet, filteredVenues]);
 
   const activeVenueCount = useMemo(() => venues.filter((v) => v.isAvailable !== false).length, [venues]);
 
@@ -414,7 +418,11 @@ export default function LandingPage() {
                   </div>
                 </div>
               </div>
-              <button className="bg-zinc-900 text-white font-bold h-12 max-[375px]:h-11 rounded-2xl hover:opacity-90 transition-all flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAppliedFilter({ date, startTime, endTime })}
+                className="bg-zinc-900 text-white font-bold h-12 max-[375px]:h-11 rounded-2xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
+              >
                 <Filter size={18} /> Apply Filters
               </button>
             </div>

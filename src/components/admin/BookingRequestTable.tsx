@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import type { Booking } from "@shared/types";
 import { cn } from "@/lib/utils";
 import { format } from 'date-fns';
+import { CancelBookingDialog } from '@/components/booking/CancelBookingDialog';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ interface BookingRequestTableProps {
 export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venueMap, userMap }: BookingRequestTableProps) {
   const [processingId, setProcessingId] = React.useState<string | null>(null);
   const [selectedBookingDocs, setSelectedBookingDocs] = useState<Booking | null>(null);
+  const [bookingToCancel, setBookingToCancel] = useState<Booking | null>(null);
   const queryClient = useQueryClient();
   const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -232,6 +234,17 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
                           )}
                         </Button>
                       </div>
+                    ) : booking.status === 'APPROVED' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:hover:bg-red-950 h-8 px-3 text-xs"
+                        disabled={!!processingId}
+                        onClick={() => setBookingToCancel(booking)}
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancel Booking
+                      </Button>
                     ) : (
                       <span className="text-xs text-muted-foreground italic">Processed</span>
                     )}
@@ -303,6 +316,24 @@ export function BookingRequestTable({ bookings, isLoading, onActionSuccess, venu
           </div>
         </DialogContent>
       </Dialog>
+
+      <CancelBookingDialog
+        booking={bookingToCancel}
+        isOpen={!!bookingToCancel}
+        onClose={() => setBookingToCancel(null)}
+        onSuccess={async () => {
+          setBookingToCancel(null);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['all-bookings'] }),
+            queryClient.invalidateQueries({ queryKey: ['bookings-schedule'] }),
+            queryClient.invalidateQueries({ queryKey: ['dashboard-venues-availability'] }),
+            queryClient.invalidateQueries({ queryKey: ['venues-availability'] }),
+            queryClient.invalidateQueries({ queryKey: ['notifications'] })
+          ]);
+          onActionSuccess();
+        }}
+        venueMap={venueMap}
+      />
     </>
   );
 }

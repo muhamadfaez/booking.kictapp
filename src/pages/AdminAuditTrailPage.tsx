@@ -16,7 +16,10 @@ export default function AdminAuditTrailPage() {
 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ['admin-audit-trail'],
-    queryFn: () => api<AuditTrailEntry[]>('/api/admin/audit-trail')
+    queryFn: () => api<AuditTrailEntry[]>('/api/admin/audit-trail'),
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 0
   });
 
   return (
@@ -31,7 +34,7 @@ export default function AdminAuditTrailPage() {
             </div>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Audit Trail</h1>
             <p className="max-w-2xl text-muted-foreground">
-              Review security-sensitive actions across bookings, users, venues, authentication, and settings.
+              Review recorded actions across bookings, users, venues, and settings.
             </p>
           </div>
         </header>

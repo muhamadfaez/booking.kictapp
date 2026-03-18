@@ -27,9 +27,12 @@ export function DashboardHeader() {
   const queryClient = useQueryClient();
   const userAvatarUrl = getUserAvatarUrl(user);
   const { data: notifications = [] } = useQuery({
-    queryKey: ['notifications'],
+    queryKey: ['notifications', user?.id, user?.role],
     queryFn: () => api<Notification[]>('/api/notifications'),
-    enabled: !!user
+    enabled: !!user,
+    refetchOnWindowFocus: true,
+    refetchInterval: user ? 15000 : false,
+    staleTime: 0
   });
   const unreadCount = notifications.filter((item) => !item.readAt).length;
 

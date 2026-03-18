@@ -51,6 +51,10 @@ const ALLOWED_DOC_MIME_TYPES = new Set([
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ]);
+const ADMIN_NOTIFICATION_STREAM_KEY = 'stream:notifications:admin';
+const USER_NOTIFICATION_STREAM_PREFIX = 'stream:notifications:user:';
+const AUDIT_STREAM_KEY = 'stream:audit-trail';
+const MAX_STREAM_ITEMS = 250;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -89,13 +93,84 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+async function appendToStream<T>(env: Env, key: string, item: T) {
+  const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await globalDO.getDoc<T[]>(key);
+    const version = current?.v ?? 0;
+    const items = current?.data ?? [];
+    const next = [item, ...items].slice(0, MAX_STREAM_ITEMS);
+    const result = await globalDO.casPut(key, version, next);
+    if (result.ok) return;
+  }
+
+  throw new Error(`Failed to append stream item for ${key}`);
+}
+
+async function readStream<T>(env: Env, key: string): Promise<T[]> {
+  const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+  const current = await globalDO.getDoc<T[]>(key);
+  return current?.data ?? [];
+}
+
+async function updateStreamItem<T extends { id: string }>(
+  env: Env,
+  key: string,
+  id: string,
+  updater: (item: T) => T
+) {
+  const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await globalDO.getDoc<T[]>(key);
+    const version = current?.v ?? 0;
+    const items = current?.data ?? [];
+    const index = items.findIndex((item) => item.id === id);
+    if (index === -1) return false;
+    const next = [...items];
+    next[index] = updater(next[index]);
+    const result = await globalDO.casPut(key, version, next);
+    if (result.ok) return true;
+  }
+
+  throw new Error(`Failed to update stream item for ${key}`);
+}
+
 async function createNotification(env: Env, input: Omit<Notification, 'id' | 'createdAt'> & { createdAt?: number }) {
   const notification: Notification = {
     id: `notif_${crypto.randomUUID()}`,
     createdAt: input.createdAt ?? Date.now(),
+    audienceRole: input.audienceRole,
     ...input
   };
-  await NotificationEntity.create(env, notification);
+  const results = await Promise.allSettled([
+    NotificationEntity.create(env, notification),
+    appendToStream(
+      env,
+      notification.audienceRole === 'ADMIN' ? ADMIN_NOTIFICATION_STREAM_KEY : `${USER_NOTIFICATION_STREAM_PREFIX}${notification.userId}`,
+      notification
+    )
+  ]);
+  const failures = results.filter((result) => result.status === 'rejected');
+  if (failures.length > 0) {
+    console.error('[NOTIFICATION] Persist failure', {
+      id: notification.id,
+      userId: notification.userId,
+      audienceRole: notification.audienceRole,
+      type: notification.type,
+      title: notification.title,
+      failures: failures.map((result) => result.status === 'rejected' ? String(result.reason) : '')
+    });
+  } else {
+    console.log('[NOTIFICATION] Persisted', {
+      id: notification.id,
+      userId: notification.userId,
+      audienceRole: notification.audienceRole,
+      type: notification.type,
+      title: notification.title
+    });
+  }
   return notification;
 }
 
@@ -105,7 +180,29 @@ async function createAuditEntry(env: Env, input: Omit<AuditTrailEntry, 'id' | 'c
     createdAt: input.createdAt ?? Date.now(),
     ...input
   };
-  await AuditTrailEntity.create(env, entry);
+  const results = await Promise.allSettled([
+    AuditTrailEntity.create(env, entry),
+    appendToStream(env, AUDIT_STREAM_KEY, entry)
+  ]);
+  const failures = results.filter((result) => result.status === 'rejected');
+  if (failures.length > 0) {
+    console.error('[AUDIT] Persist failure', {
+      id: entry.id,
+      action: entry.action,
+      actorEmail: entry.actorEmail,
+      targetType: entry.targetType,
+      targetId: entry.targetId,
+      failures: failures.map((result) => result.status === 'rejected' ? String(result.reason) : '')
+    });
+  } else {
+    console.log('[AUDIT] Persisted', {
+      id: entry.id,
+      action: entry.action,
+      actorEmail: entry.actorEmail,
+      targetType: entry.targetType,
+      targetId: entry.targetId
+    });
+  }
   return entry;
 }
 
@@ -118,12 +215,23 @@ async function logAuditFromContext(
   metadata?: AuditTrailEntry['metadata']
 ) {
   const actor = c.get('user');
-  if (!actor?.sub || !actor?.email) return;
+  if (!actor?.sub) return;
+
+  let actorEmail = actor.email as string | undefined;
+  let actorRole = actor.role as User['role'] | undefined;
+  if (!actorEmail) {
+    const actorState = await new UserEntity(c.env, actor.sub).getState();
+    actorEmail = actorState.email || '';
+    actorRole = actorState.role || actorRole;
+  }
+  if (!actorEmail) {
+    actorEmail = `${actor.sub}@local`;
+  }
 
   await createAuditEntry(c.env, {
     actorUserId: actor.sub,
-    actorEmail: actor.email,
-    actorRole: actor.role,
+    actorEmail,
+    actorRole,
     action,
     summary,
     targetType,
@@ -138,18 +246,168 @@ async function listAdminUsers(env: Env): Promise<User[]> {
   return users.items.filter((user) => user.role === 'ADMIN');
 }
 
+const normalizeLoose = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+async function resolveBookingRequesterEmail(env: Env, booking: Booking, requester?: User) {
+  const directEmail = requester?.email || booking.userEmail || '';
+  if (directEmail && directEmail.includes('@')) {
+    return {
+      email: directEmail,
+      name: requester?.name || booking.userName || directEmail.split('@')[0]
+    };
+  }
+
+  const exactUser = await new UserEntity(env, booking.userId).getState();
+  if (exactUser.email && exactUser.email.includes('@')) {
+    return {
+      email: exactUser.email,
+      name: exactUser.name || booking.userName || exactUser.email.split('@')[0]
+    };
+  }
+
+  await UserEntity.ensureSeed(env);
+  const users = await UserEntity.list(env);
+  const bookingName = normalizeLoose(booking.userName || '');
+
+  const matchedUser = users.items.find((user) => {
+    if (user.id === booking.userId) return true;
+    if (bookingName && normalizeLoose(user.name || '') === bookingName) return true;
+    if (bookingName && normalizeLoose((user.email || '').split('@')[0] || '') === bookingName) return true;
+    return false;
+  });
+
+  if (matchedUser?.email && matchedUser.email.includes('@')) {
+    return {
+      email: matchedUser.email,
+      name: matchedUser.name || booking.userName || matchedUser.email.split('@')[0]
+    };
+  }
+
+  return {
+    email: '',
+    name: requester?.name || booking.userName || 'Requester'
+  };
+}
+
+function buildRequesterSnapshot(
+  authUser: any,
+  requesterState: User,
+  fallback?: { requesterEmail?: string; requesterName?: string }
+): User {
+  const email =
+    requesterState.email ||
+    authUser?.email ||
+    fallback?.requesterEmail ||
+    '';
+  const name =
+    requesterState.name ||
+    authUser?.name ||
+    fallback?.requesterName ||
+    (email ? email.split('@')[0] : 'Requester');
+
+  return {
+    id: requesterState.id || authUser?.sub,
+    email,
+    name,
+    role: requesterState.role || authUser?.role || 'USER',
+    avatar: requesterState.avatar
+  };
+}
+
+async function syncRequesterProfile(env: Env, requester: User) {
+  if (!requester.id) return;
+
+  const entity = new UserEntity(env, requester.id);
+  if (await entity.exists()) {
+    const current = await entity.getState();
+    const updates: Partial<User> = {};
+    if (!current.email && requester.email) updates.email = requester.email;
+    if (!current.name && requester.name) updates.name = requester.name;
+    if (Object.keys(updates).length > 0) {
+      await entity.patch(updates);
+    }
+    return;
+  }
+
+  if (!requester.email) return;
+  await UserEntity.create(env, {
+    id: requester.id,
+    email: requester.email,
+    name: requester.name || requester.email.split('@')[0],
+    role: requester.role || 'USER',
+    avatar: requester.avatar
+  });
+}
+
 async function sendEmailSafe(env: Env, to: string, subject: string, html: string) {
+  if (!to || !to.includes('@')) {
+    console.error('[MAIL] Missing recipient email', { to, subject });
+    return { ok: false as const, error: 'Missing recipient email' };
+  }
+
   try {
     const mailer = new GoogleMailService(env);
     await mailer.sendEmail(to, subject, { html });
+    console.log('[MAIL] Sent', { to, subject });
+    return { ok: true as const };
   } catch (error) {
-    console.error('[MAIL] Failed to send email:', error);
+    console.error('[MAIL] Failed to send email', {
+      to,
+      subject,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    try {
+      const mailer = new GoogleMailService(env);
+      await mailer.sendEmail(to, subject, { html });
+      console.log('[MAIL] Sent on retry', { to, subject });
+      return { ok: true as const };
+    } catch (retryError) {
+      console.error('[MAIL] Retry failed', {
+        to,
+        subject,
+        error: retryError instanceof Error ? retryError.message : String(retryError)
+      });
+      return {
+        ok: false as const,
+        error: retryError instanceof Error ? retryError.message : 'Unknown email delivery failure'
+      };
+    }
   }
+}
+
+async function createAdminNotifications(
+  env: Env,
+  input: Omit<Notification, 'id' | 'createdAt' | 'userId'> & { createdAt?: number }
+) {
+  const admins = await listAdminUsers(env);
+  if (admins.length === 0) {
+    console.warn('[NOTIFICATION] No admin users available for admin notification', {
+      type: input.type,
+      title: input.title
+    });
+    return [];
+  }
+
+  return Promise.all(
+    admins.map((admin) =>
+      createNotification(env, {
+        userId: admin.id,
+        audienceRole: 'ADMIN',
+        ...input
+      })
+    )
+  );
 }
 
 async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User, venue: Venue) {
   const admins = await listAdminUsers(env);
-  if (admins.length === 0) return;
+  if (admins.length === 0) {
+    console.warn('[BOOKING] No admins available for booking notification', {
+      bookingId: booking.id,
+      venueId: booking.venueId
+    });
+    return;
+  }
 
   const subject = `New booking request for ${venue.name}`;
   const html = renderStandardEmail({
@@ -169,9 +427,10 @@ async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User
     admins.map(async (admin) => {
       await createNotification(env, {
         userId: admin.id,
+        audienceRole: 'ADMIN',
         type: 'BOOKING_CREATED',
         title: 'New booking request',
-        message: `${requester.name} requested ${venue.name} for ${formatBookingWindow(booking)}.`,
+        message: `${requester.name || booking.userName} requested ${venue.name} for ${formatBookingWindow(booking)}.`,
         bookingId: booking.id,
         venueId: booking.venueId,
         link: '/admin'
@@ -182,6 +441,9 @@ async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User
 }
 
 async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: User, venue: Venue, status: 'APPROVED' | 'REJECTED') {
+  const resolvedRecipient = await resolveBookingRequesterEmail(env, booking, requester);
+  const recipientEmail = resolvedRecipient.email;
+  const recipientName = resolvedRecipient.name;
   const statusLabel = status === 'APPROVED' ? 'approved' : 'rejected';
   const title = status === 'APPROVED' ? 'Booking approved' : 'Booking rejected';
   const subject = `${venue.name} booking ${statusLabel}`;
@@ -189,10 +451,11 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
     eyebrow: status === 'APPROVED' ? 'Booking Receipt' : 'Booking Update',
     title: title,
     intro: status === 'APPROVED'
-      ? `Your booking for ${venue.name} has been approved. This email serves as your booking receipt.`
-      : `Your booking for ${venue.name} was rejected after review.`,
+      ? `Hi ${recipientName}, your booking for ${venue.name} has been approved. This email serves as your booking receipt.`
+      : `Hi ${recipientName}, your booking for ${venue.name} was rejected after review.`,
     accent: status === 'APPROVED' ? '#0f8f6f' : '#b91c1c',
     sections: [
+      { label: 'Requester', value: `${recipientName}${recipientEmail ? ` (${recipientEmail})` : ''}` },
       { label: 'Venue', value: venue.name },
       { label: 'Schedule', value: formatBookingWindow(booking) },
       { label: 'Purpose', value: booking.purpose },
@@ -204,7 +467,8 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
   });
 
   await createNotification(env, {
-    userId: requester.id,
+    userId: requester.id || booking.userId,
+    audienceRole: 'USER',
     type: status === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_REJECTED',
     title,
     message: `${venue.name} on ${formatBookingWindow(booking)} was ${statusLabel}.`,
@@ -212,7 +476,34 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
     venueId: booking.venueId,
     link: '/bookings'
   });
-  await sendEmailSafe(env, requester.email, subject, html);
+
+  await createAdminNotifications(env, {
+    type: status === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_REJECTED',
+    title: `Booking ${statusLabel}`,
+    message: `${recipientName} ${status === 'APPROVED' ? 'received approval for' : 'had a rejection for'} ${venue.name} on ${formatBookingWindow(booking)}.`,
+    bookingId: booking.id,
+    venueId: booking.venueId,
+    link: '/admin/history'
+  });
+
+  const emailResult = await sendEmailSafe(env, recipientEmail, subject, html);
+  console.log('[BOOKING] Status update processed', {
+    bookingId: booking.id,
+    status,
+    recipientEmail,
+    recipientName,
+    emailSent: emailResult.ok
+  });
+  if (!emailResult.ok) {
+    await createAdminNotifications(env, {
+      type: 'BOOKING_UPDATED',
+      title: 'Receipt email delivery failed',
+      message: `Could not send ${statusLabel} email for ${venue.name} (${booking.id}). ${emailResult.error || 'Unknown error'}.`,
+      bookingId: booking.id,
+      venueId: booking.venueId,
+      link: '/admin/history'
+    });
+  }
 }
 
 async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () => Promise<T>): Promise<T> {
@@ -289,6 +580,7 @@ async function createBookingSubmission(
       venueId: input.venueId,
       userId: requester.id,
       userName: requester.name || requester.email.split('@')[0],
+      userEmail: requester.email || c.get('user')?.email || '',
       date: input.date,
       session: input.session,
       startTime: input.startTime,
@@ -688,42 +980,67 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
   });
 
   app.get('/api/admin/audit-trail', verifyAuthStrict, verifyAdminStrict, async (c) => {
-    const list = await AuditTrailEntity.list(c.env);
-    const items = [...list.items].sort((a, b) => b.createdAt - a.createdAt);
+    const items = (await readStream<AuditTrailEntry>(c.env, AUDIT_STREAM_KEY))
+      .filter((entry) => entry.targetType !== 'AUTH')
+      .sort((a, b) => b.createdAt - a.createdAt);
+    console.log('[AUDIT] Admin audit trail requested', { count: items.length });
     return ok(c, items);
   });
 
   app.get('/api/notifications', verifyAuthStrict, async (c) => {
     const user = c.get('user');
-    const list = await NotificationEntity.list(c.env);
-    const items = list.items
-      .filter((item) => item.userId === user.sub)
-      .sort((a, b) => b.createdAt - a.createdAt);
+    const items = user.role === 'ADMIN'
+      ? await readStream<Notification>(c.env, ADMIN_NOTIFICATION_STREAM_KEY)
+      : await readStream<Notification>(c.env, `${USER_NOTIFICATION_STREAM_PREFIX}${user.sub}`);
+    console.log('[NOTIFICATION] List requested', {
+      userId: user.sub,
+      role: user.role,
+      count: items.length
+    });
     return ok(c, items);
   });
 
   app.post('/api/notifications/:id/read', verifyAuthStrict, async (c) => {
     const user = c.get('user');
-    const notification = new NotificationEntity(c.env, c.req.param('id'));
-    if (!await notification.exists()) return notFound(c, 'Notification not found');
+    const notificationId = c.req.param('id');
+    const streamKey = user.role === 'ADMIN' ? ADMIN_NOTIFICATION_STREAM_KEY : `${USER_NOTIFICATION_STREAM_PREFIX}${user.sub}`;
+    const markedAt = Date.now();
+    const updated = await updateStreamItem<Notification>(c.env, streamKey, notificationId, (item) => ({
+      ...item,
+      readAt: item.readAt ?? markedAt
+    }));
 
-    const current = await notification.getState();
-    if (current.userId !== user.sub) {
-      return bad(c, 'Unauthorized notification access');
+    const notification = new NotificationEntity(c.env, notificationId);
+    if (await notification.exists()) {
+      const current = await notification.getState();
+      if (current.userId === user.sub || (user.role === 'ADMIN' && current.audienceRole === 'ADMIN')) {
+        await notification.patch({ readAt: current.readAt ?? markedAt });
+      }
     }
 
-    await notification.patch({ readAt: Date.now() });
-    return ok(c, await notification.getState());
+    if (!updated) return notFound(c, 'Notification not found');
+    const items = await readStream<Notification>(c.env, streamKey);
+    console.log('[NOTIFICATION] Marked read', {
+      notificationId,
+      userId: user.sub,
+      role: user.role
+    });
+    return ok(c, items.find((item) => item.id === notificationId) || null);
   });
 
   app.post('/api/bookings', verifyAuthStrict, async (c) => {
-    const body = await c.req.json() as Partial<Booking>;
+    const body = await c.req.json() as Partial<Booking> & { requesterEmail?: string; requesterName?: string };
     const user = c.get('user');
     const { venueId, date, session, startTime, endTime, purpose } = body;
 
     // Use userId from token, ignore body userId
     const userId = user.sub;
-    const requester = await new UserEntity(c.env, userId).getState();
+    const requesterState = await new UserEntity(c.env, userId).getState();
+    const requester = buildRequesterSnapshot(user, { ...requesterState, id: requesterState.id || userId }, {
+      requesterEmail: body.requesterEmail,
+      requesterName: body.requesterName
+    });
+    await syncRequesterProfile(c.env, requester);
 
     // Validation
     if (!venueId || !date || (!session && (!startTime || !endTime)) || !purpose) {
@@ -755,6 +1072,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       await sendAdminBookingEmail(c.env, created, requester, venueData);
       await createNotification(c.env, {
         userId,
+        audienceRole: 'USER',
         type: 'BOOKING_CREATED',
         title: 'Booking submitted',
         message: `Your request for ${venueData.name} on ${formatBookingWindow(created)} was submitted.`,
@@ -765,6 +1083,12 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       await logAuditFromContext(c, 'BOOKING_CREATED', `Created booking for ${venueData.name} on ${created.date}`, 'BOOKING', created.id, {
         venueId: created.venueId,
         date: created.date
+      });
+      console.log('[BOOKING] Created', {
+        bookingId: created.id,
+        venueId: created.venueId,
+        requesterId: requester.id,
+        requesterEmail: requester.email
       });
 
       return ok(c, created);
@@ -784,6 +1108,8 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       purpose?: string;
       programType?: Booking['programType'];
       documents?: Booking['documents'];
+      requesterEmail?: string;
+      requesterName?: string;
     };
     const user = c.get('user');
     const venueId = body.venueId;
@@ -804,7 +1130,12 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       return bad(c, `Venue is unavailable for booking${reason}`);
     }
 
-    const requester = await new UserEntity(c.env, user.sub).getState();
+    const requesterState = await new UserEntity(c.env, user.sub).getState();
+    const requester = buildRequesterSnapshot(user, { ...requesterState, id: requesterState.id || user.sub }, {
+      requesterEmail: body.requesterEmail,
+      requesterName: body.requesterName
+    });
+    await syncRequesterProfile(c.env, requester);
 
     try {
       const createdBookings: Booking[] = [];
@@ -827,6 +1158,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
         ...createdBookings.map((booking) =>
           createNotification(c.env, {
             userId: requester.id,
+            audienceRole: 'USER',
             type: 'BOOKING_CREATED',
             title: 'Booking submitted',
             message: `Your request for ${venueData.name} on ${formatBookingWindow(booking)} was submitted.`,
@@ -839,6 +1171,12 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       await logAuditFromContext(c, 'BOOKING_BATCH_CREATED', `Created ${createdBookings.length} bookings for ${venueData.name}`, 'BOOKING', createdBookings[0]?.id, {
         venueId,
         count: createdBookings.length
+      });
+      console.log('[BOOKING] Batch created', {
+        count: createdBookings.length,
+        venueId,
+        requesterId: requester.id,
+        requesterEmail: requester.email
       });
 
       return ok(c, {
@@ -857,8 +1195,28 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     const booking = new BookingEntity(c.env, id);
     if (!await booking.exists()) return notFound(c, 'Booking not found');
     const currentBooking = await booking.getState();
-    const requester = await new UserEntity(c.env, currentBooking.userId).getState();
+    const requesterState = await new UserEntity(c.env, currentBooking.userId).getState();
+    const requester: User = {
+      id: requesterState.id || currentBooking.userId,
+      email: requesterState.email || currentBooking.userEmail || '',
+      name: requesterState.name || currentBooking.userName || 'Requester',
+      role: requesterState.role || 'USER',
+      avatar: requesterState.avatar
+    };
     const venue = await new VenueEntity(c.env, currentBooking.venueId).getState();
+    const resolvedRecipient = await resolveBookingRequesterEmail(c.env, currentBooking, requester);
+    if (resolvedRecipient.email && resolvedRecipient.email !== currentBooking.userEmail) {
+      await booking.patch({ userEmail: resolvedRecipient.email });
+      currentBooking.userEmail = resolvedRecipient.email;
+    }
+    console.log('[BOOKING] Status update requested', {
+      bookingId: id,
+      currentStatus: currentBooking.status,
+      nextStatus: status,
+      requesterId: requester.id,
+      requesterEmail: resolvedRecipient.email || requester.email || currentBooking.userEmail || '',
+      venueId: currentBooking.venueId
+    });
 
     // Privacy & Cleanup: If rejected, delete associated documents
     if (status === 'REJECTED') {
@@ -917,30 +1275,52 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       return bad(c, 'Unauthorized: You can only cancel your own bookings');
     }
 
-    // Only allow cancellation of PENDING bookings
-    if (bookingData.status !== 'PENDING') {
+    const isAdmin = user.role === 'ADMIN';
+
+    if (isAdmin) {
+      if (bookingData.status !== 'PENDING' && bookingData.status !== 'APPROVED') {
+        return bad(c, 'Admins can only cancel pending or approved bookings');
+      }
+    } else if (bookingData.status !== 'PENDING') {
       return bad(c, 'Only pending bookings can be cancelled');
     }
 
     await booking.patch({ status: 'CANCELLED' });
+    const updatedBooking = await booking.getState();
     const venue = await new VenueEntity(c.env, bookingData.venueId).getState();
-    const admins = await listAdminUsers(c.env);
-    await Promise.all(admins.map((admin) =>
-      createNotification(c.env, {
-        userId: admin.id,
+    if (isAdmin) {
+      await createNotification(c.env, {
+        userId: updatedBooking.userId,
+        audienceRole: 'USER',
         type: 'BOOKING_CANCELLED',
-        title: 'Booking cancelled',
-        message: `${bookingData.userName} cancelled ${venue.name} for ${formatBookingWindow(bookingData)}.`,
-        bookingId: bookingData.id,
-        venueId: bookingData.venueId,
-        link: '/admin/history'
-      })
-    ));
+        title: 'Booking cancelled by admin',
+        message: `${venue.name} on ${formatBookingWindow(updatedBooking)} was cancelled by an administrator.`,
+        bookingId: updatedBooking.id,
+        venueId: updatedBooking.venueId,
+        link: '/bookings'
+      });
+    } else {
+      const admins = await listAdminUsers(c.env);
+      await Promise.all(admins.map((admin) =>
+        createNotification(c.env, {
+          userId: admin.id,
+          audienceRole: 'ADMIN',
+          type: 'BOOKING_CANCELLED',
+          title: 'Booking cancelled',
+          message: `${bookingData.userName} cancelled ${venue.name} for ${formatBookingWindow(bookingData)}.`,
+          bookingId: bookingData.id,
+          venueId: bookingData.venueId,
+          link: '/admin/history'
+        })
+      ));
+    }
     await logAuditFromContext(c, 'BOOKING_CANCELLED', `Cancelled booking ${bookingData.id} for ${venue.name}`, 'BOOKING', bookingData.id, {
       venueId: bookingData.venueId,
-      userId: bookingData.userId
+      userId: bookingData.userId,
+      cancelledBy: isAdmin ? 'ADMIN' : 'USER',
+      previousStatus: bookingData.status
     });
-    return ok(c, await booking.getState());
+    return ok(c, updatedBooking);
   });
 
   // IMAGES PROXY

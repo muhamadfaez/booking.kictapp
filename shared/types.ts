@@ -29,6 +29,7 @@ export interface Booking {
   venueId: string;
   userId: string;
   userName: string;
+  userEmail?: string;
   date: string; // YYYY-MM-DD
   session?: SessionSlot;
   status: BookingStatus;
@@ -53,6 +54,7 @@ export type NotificationType =
 export interface Notification {
   id: string;
   userId: string;
+  audienceRole?: UserRole;
   type: NotificationType;
   title: string;
   message: string;

@@ -7,9 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CalendarView } from '@/components/schedule/CalendarView';
-import { Building2, Loader2, MapPin, Users } from 'lucide-react';
+import { Building2, Loader2, MapPin, Users, CalendarDays, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePageTitle } from '@/hooks/use-page-title';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function VenuePage() {
   usePageTitle('Venues');
@@ -19,7 +20,10 @@ export default function VenuePage() {
 
   const { data: venues = [], isLoading: venuesLoading } = useQuery({
     queryKey: ['venues'],
-    queryFn: () => api<Venue[]>('/api/venues')
+    queryFn: () => api<Venue[]>('/api/venues'),
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 0
   });
 
   const { data: occupancyBookings = [], isLoading: occupancyLoading } = useQuery({
@@ -43,76 +47,142 @@ export default function VenuePage() {
 
   return (
     <AppLayout container>
-      <div className="space-y-6 lg:h-[calc(100svh-100px)] flex flex-col">
-        <header className="shrink-0">
-          <h1 className="text-3xl font-bold tracking-tight">Venue</h1>
-          <p className="text-muted-foreground">
-            Choose a venue to view its realtime booking calendar.
-          </p>
+      <div className="space-y-8">
+        <header className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-subtle p-8">
+          <div className="absolute right-0 top-0 h-64 w-64 bg-gradient-primary opacity-5 blur-3xl" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-primary">
+                <CalendarDays className="h-5 w-5" />
+                <span className="text-sm font-medium uppercase tracking-wider">Realtime Venue Calendar</span>
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Venue Availability</h1>
+              <p className="max-w-2xl text-muted-foreground">
+                Select a venue from the directory to inspect its live booking calendar without leaving the page.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:w-auto">
+              <Card className="border-border/50 bg-background/80 shadow-sm">
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold">{venues.length}</p>
+                  <p className="text-xs text-muted-foreground">Total Venues</p>
+                </CardContent>
+              </Card>
+              <Card className="border-border/50 bg-background/80 shadow-sm">
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">
+                    {venues.filter((venue) => venue.isAvailable !== false).length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Open Now</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:flex-1 lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)] gap-6">
-          <section className="rounded-lg border bg-card overflow-hidden flex flex-col lg:min-h-0">
-            <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
-              <h2 className="text-base font-semibold">Venue List</h2>
-            </div>
-            <div className="p-3 space-y-3 max-h-[22rem] overflow-y-auto lg:max-h-none">
-              {venuesLoading ? (
-                Array.from({ length: 5 }, (_, i) => (
-                  <Card key={i}>
-                    <CardContent className="p-4 space-y-2">
-                      <Skeleton className="h-5 w-2/3" />
-                      <Skeleton className="h-4 w-1/2" />
-                      <Skeleton className="h-4 w-1/3" />
-                    </CardContent>
-                  </Card>
-                ))
-              ) : (
-                venues.map((venue) => (
-                  <Card
-                    key={venue.id}
-                    onClick={() => setSelectedVenueId(venue.id)}
-                    className={`cursor-pointer transition-all ${selectedVenueId === venue.id ? 'ring-2 ring-primary border-primary/40' : 'hover:border-primary/30'}`}
-                  >
-                    <CardContent className="p-4 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <CardTitle className="text-base">{venue.name}</CardTitle>
-                        <Badge variant={venue.isAvailable === false ? 'destructive' : 'secondary'}>
-                          {venue.isAvailable === false ? 'Unavailable' : 'Available'}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <MapPin className="w-4 h-4" />
-                        {venue.location}
-                      </p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Users className="w-4 h-4" />
-                        Capacity: {venue.capacity}
-                      </p>
-                      {venue.isAvailable === false && venue.unavailableReason && (
-                        <p className="text-xs text-destructive">Reason: {venue.unavailableReason}</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          </section>
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-muted/30 px-6 py-5">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Choose Venue</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Use the selector to swap the calendar context instantly.
+                </p>
+              </div>
 
-          <section className="space-y-3 flex flex-col lg:min-h-0 lg:overflow-hidden">
-            <h2 className="text-lg font-semibold shrink-0">
-              {selectedVenue ? `${selectedVenue.name} Calendar` : 'Venue Calendar'}
-            </h2>
-            <div className="min-h-[520px] lg:flex-1 lg:min-h-[420px] overflow-hidden rounded-lg border bg-card">
+              <div className="w-full max-w-md">
+                {venuesLoading ? (
+                  <Skeleton className="h-11 w-full rounded-xl" />
+                ) : (
+                  <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
+                    <SelectTrigger className="h-12 rounded-xl border-border/60 bg-background">
+                      <SelectValue placeholder="Select a venue" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {venues.map((venue) => (
+                        <SelectItem key={venue.id} value={venue.id} className="rounded-lg">
+                          {venue.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-6 p-6">
+            {selectedVenue ? (
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                <Card className="border-border/50 bg-background/70 shadow-none">
+                  <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                          <Building2 className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-bold">{selectedVenue.name}</h2>
+                          <p className="text-sm text-muted-foreground">Live venue schedule overview</p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-primary/70" />
+                          <span>{selectedVenue.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-primary/70" />
+                          <span>Capacity: {selectedVenue.capacity}</span>
+                        </div>
+                      </div>
+
+                      <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                        {selectedVenue.description}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 md:flex-col md:items-end">
+                      <Badge variant={selectedVenue.isAvailable === false ? 'destructive' : 'secondary'} className="px-3 py-1">
+                        {selectedVenue.isAvailable === false ? 'Unavailable' : 'Available'}
+                      </Badge>
+                      {selectedVenue.isAvailable === false && selectedVenue.unavailableReason ? (
+                        <p className="max-w-[220px] text-right text-xs text-destructive">
+                          {selectedVenue.unavailableReason}
+                        </p>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50 bg-background/70 shadow-none">
+                  <CardContent className="flex h-full flex-col justify-center gap-2 p-5">
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Current View
+                    </span>
+                    <div className="text-3xl font-black tracking-tight">
+                      {date?.toLocaleString('default', { month: 'short' })}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Review occupancy in day, week, month, or year mode directly in the calendar.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
+
+            <div className="min-h-[520px] overflow-hidden rounded-2xl border bg-card lg:min-h-[600px]">
               {!selectedVenue || occupancyLoading ? (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                <div className="flex h-full items-center justify-center text-muted-foreground">
+                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
                   Loading calendar...
                 </div>
               ) : (
                 <CalendarView
                   date={date || new Date()}
-                  setDate={(d) => setDate(d)}
+                  setDate={(nextDate) => setDate(nextDate)}
                   venues={[selectedVenue]}
                   bookings={occupancyBookings}
                   currentUserRole={user?.role}
@@ -121,8 +191,8 @@ export default function VenuePage() {
                 />
               )}
             </div>
-          </section>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

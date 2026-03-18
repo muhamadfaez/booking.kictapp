@@ -159,13 +159,20 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             };
             await UserEntity.create(c.env, newUser);
             userData = newUser;
-        } else if (!userData.avatar) {
-            const generatedAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
-            await userEntity.patch({ avatar: generatedAvatar });
-            userData = {
-                ...userData,
-                avatar: generatedAvatar
-            };
+        } else {
+            const generatedAvatar = userData.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
+            const updates: Partial<User> = {};
+            if (!userData.email) updates.email = cleanEmail;
+            if (!userData.name) updates.name = name || cleanEmail.split('@')[0];
+            if (!userData.avatar) updates.avatar = generatedAvatar;
+
+            if (Object.keys(updates).length > 0) {
+                await userEntity.patch(updates);
+                userData = {
+                    ...userData,
+                    ...updates
+                };
+            }
         }
 
         // Generate JWT
@@ -248,6 +255,7 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         } else {
             // Update existing user info if changed
             const updates: any = {};
+            if (!userData.email) updates.email = cleanEmail;
             if (name && userData.name !== name) updates.name = name;
             if (avatar && userData.avatar !== avatar) updates.avatar = avatar;
 

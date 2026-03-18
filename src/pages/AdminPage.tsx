@@ -1,14 +1,15 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { BookingRequestTable } from '@/components/admin/BookingRequestTable';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { api } from '@/lib/api-client';
-import type { Booking, Venue, User } from '@shared/types';
+import type { Booking, Venue, User, Notification } from '@shared/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { ShieldCheck, Clock, History } from 'lucide-react';
+import { ShieldCheck, Clock, History, Bell } from 'lucide-react';
 import { usePageTitle } from '@/hooks/use-page-title';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function AdminPage() {
   usePageTitle('Admin');
@@ -17,10 +18,6 @@ export default function AdminPage() {
     queryFn: () => api<Booking[]>('/api/bookings')
   });
 
-  useEffect(() => {
-    api('/api/init').catch(console.error);
-  }, []);
-
   const { data: venues = [] } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues')
@@ -28,6 +25,10 @@ export default function AdminPage() {
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => api<User[]>('/api/admin/users')
+  });
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api<Notification[]>('/api/notifications')
   });
 
   const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);
@@ -66,6 +67,42 @@ export default function AdminPage() {
 
         {/* Stats Grid */}
         <AdminStats bookings={bookings ?? []} venues={venues} />
+
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardHeader className="px-6 py-5 border-b border-border/50 bg-muted/30">
+            <CardTitle className="flex items-center gap-2 text-lg font-bold">
+              <Bell className="h-5 w-5 text-primary" />
+              Admin Notifications
+            </CardTitle>
+            <CardDescription>
+              Recent alerts tied to booking activity and admin actions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
+            {notifications.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No notifications yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {notifications.slice(0, 6).map((notification) => (
+                  <div
+                    key={notification.id}
+                    className="rounded-xl border border-border/50 bg-card px-4 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="font-medium">{notification.title}</div>
+                        <div className="text-sm text-muted-foreground">{notification.message}</div>
+                      </div>
+                      <div className="shrink-0 text-xs text-muted-foreground">
+                        {formatDistanceToNow(notification.createdAt, { addSuffix: true })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Booking Management */}
         <div className="space-y-4">

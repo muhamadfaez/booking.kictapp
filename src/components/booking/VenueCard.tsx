@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Users, MapPin, ArrowRight, Wifi, Monitor, Coffee } from "lucide-react";
 import type { Venue } from "@shared/types";
+import { SafeImage } from "@/components/ui/safe-image";
 
 interface VenueCardProps {
   venue: Venue;
@@ -11,6 +12,8 @@ interface VenueCardProps {
   disabled?: boolean;
   disabledReason?: string;
 }
+
+const DEFAULT_VENUE_IMAGE = 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=900';
 
 const amenityIcons: Record<string, React.ElementType> = {
   'wifi': Wifi,
@@ -23,10 +26,13 @@ export function VenueCard({ venue, onBook, disabled = false, disabledReason }: V
     <Card className={`group overflow-hidden border-0 shadow-sm transition-all duration-500 bg-card ${disabled ? 'opacity-80' : 'hover:shadow-xl'}`}>
       {/* Image Container */}
       <div className="aspect-[4/3] relative overflow-hidden">
-        <img
+        <SafeImage
           src={venue.imageUrl}
+          fallbackSrc={DEFAULT_VENUE_IMAGE}
           alt={venue.name}
           className={`object-cover w-full h-full transition-transform duration-700 ${disabled ? 'grayscale-[0.5]' : 'group-hover:scale-110'}`}
+          loading="lazy"
+          decoding="async"
         />
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />

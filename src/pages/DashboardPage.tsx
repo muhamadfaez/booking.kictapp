@@ -92,23 +92,9 @@ export default function DashboardPage() {
         <Card className="border-0 shadow-sm overflow-hidden">
           <CardHeader className="px-6 py-5 border-b border-border/50 bg-muted/30">
             <CardTitle className="text-xl font-bold">Available Venues</CardTitle>
-            <CardDescription>Select date and session to check current availability.</CardDescription>
+            <CardDescription>List of venues with current availability information.</CardDescription>
           </CardHeader>
           <CardContent className="p-6 space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-              <Select value={selectedSession} onValueChange={(v) => setSelectedSession(v as SessionSlot)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select session" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MORNING">Morning (08:00 - 12:00)</SelectItem>
-                  <SelectItem value="AFTERNOON">Afternoon (13:00 - 17:00)</SelectItem>
-                  <SelectItem value="EVENING">Evening (18:00 - 22:00)</SelectItem>
-                  <SelectItem value="FULL_DAY">Full Day (08:00 - 22:00)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {venuesLoading ? (
                 [1, 2, 3].map(i => <Skeleton key={i} className="h-[300px] w-full" />)

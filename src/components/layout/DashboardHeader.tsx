@@ -17,6 +17,7 @@ import { LogOut, User as UserIcon, Bell, Settings, ChevronRight } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { useLocation } from 'react-router-dom';
 import { api } from '@/lib/api-client';
+import { getUserAvatarUrl } from '@/lib/avatar';
 import type { Notification } from '@shared/types';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -24,6 +25,7 @@ export function DashboardHeader() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const userAvatarUrl = getUserAvatarUrl(user);
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => api<Notification[]>('/api/notifications'),
@@ -40,6 +42,7 @@ export function DashboardHeader() {
     if (path.includes('/admin/users')) return 'Users';
     if (path.includes('/admin/venues')) return 'Venue Management';
     if (path.includes('/admin/history')) return 'Booking History';
+    if (path.includes('/admin/audit')) return 'Audit Trail';
     if (path.includes('/admin/settings')) return 'Settings';
     return 'Dashboard';
   };
@@ -117,7 +120,7 @@ export function DashboardHeader() {
               className="relative h-9 gap-2 rounded-lg px-2 hover:bg-muted"
             >
               <Avatar className="h-7 w-7 border border-border">
-                <AvatarImage src={user?.avatar} alt={user?.name} />
+                <AvatarImage src={userAvatarUrl} alt={user?.name} />
                 <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-xs font-bold">
                   {user?.name?.[0]?.toUpperCase() || ''}
                 </AvatarFallback>
@@ -129,7 +132,7 @@ export function DashboardHeader() {
             <DropdownMenuLabel className="font-normal p-3 bg-muted/50 rounded-lg mb-2">
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10 border-2 border-background">
-                  <AvatarImage src={user?.avatar} alt={user?.name} />
+                  <AvatarImage src={userAvatarUrl} alt={user?.name} />
                   <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-bold">
                     {user?.name?.[0]?.toUpperCase() || ''}
                   </AvatarFallback>

@@ -9,8 +9,11 @@ export type ClientErrorReport = { message: string; url: string; timestamp: strin
 
 const app = new Hono<{ Bindings: Env, Variables: { user: any } }>();
 
-// Security Headers
-app.use('*', secureHeaders());
+// This app does not require cross-origin isolation, and disabling COOP
+// avoids noisy Google OAuth popup warnings around window.closed.
+app.use('*', secureHeaders({
+  crossOriginOpenerPolicy: false
+}));
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
   const n = Number(value);
@@ -33,10 +36,10 @@ const getAllowedOrigins = (env: Env): Set<string> => {
 
 const isOriginAllowed = (origin: string, env: Env) => getAllowedOrigins(env).has(origin);
 
-const incrementRateLimit = async (env: Env, ip: string, limitPerMinute: number) => {
+const incrementRateLimit = async (env: Env, keyPart: string, limitPerMinute: number) => {
   const globalDO = env.GlobalDurableObject.get(env.GlobalDurableObject.idFromName('GlobalDurableObject'));
   const bucket = Math.floor(Date.now() / 60000);
-  const key = `rl:${ip}:${bucket}`;
+  const key = `rl:${keyPart}:${bucket}`;
 
   for (let i = 0; i < 5; i++) {
     const current = await globalDO.getDoc<{ count: number; expiresAt: number }>(key);
@@ -57,9 +60,18 @@ const incrementRateLimit = async (env: Env, ip: string, limitPerMinute: number) 
 };
 
 app.use('/api/*', async (c, next) => {
+  if (c.req.path === '/api/client-errors') {
+    await next();
+    return;
+  }
+
   const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const authHeader = c.req.header('Authorization');
+  const rateLimitKey = authHeader?.startsWith('Bearer ')
+    ? `auth:${authHeader.slice(-24)}`
+    : `ip:${ip}`;
   const limitPerMinute = parsePositiveInt(((c.env as any).RATE_LIMIT_PER_MINUTE as string | undefined), 120);
-  const rl = await incrementRateLimit(c.env, ip, limitPerMinute);
+  const rl = await incrementRateLimit(c.env, rateLimitKey, limitPerMinute);
   if (!rl.allowed) {
     return c.json({ success: false, error: 'Too many requests' }, 429);
   }

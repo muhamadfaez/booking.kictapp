@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
-import { UserEntity, VenueEntity, BookingEntity, NotificationEntity } from "./entities";
+import { UserEntity, VenueEntity, BookingEntity, NotificationEntity, AuditTrailEntity } from "./entities";
 import { ok, bad, notFound, Index } from './core-utils';
-import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue } from "@shared/types";
+import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue, AuditTrailEntry, AuditAction } from "@shared/types";
 import { verify } from 'hono/jwt';
 import { getRecentSignIns } from './signin-tracker';
-import { GoogleMailService } from './mail';
+import { GoogleMailService, renderStandardEmail } from './mail';
 
 const verifyAuthStrict = async (c: any, next: any) => {
   const authHeader = c.req.header('Authorization');
@@ -99,6 +99,39 @@ async function createNotification(env: Env, input: Omit<Notification, 'id' | 'cr
   return notification;
 }
 
+async function createAuditEntry(env: Env, input: Omit<AuditTrailEntry, 'id' | 'createdAt'> & { createdAt?: number }) {
+  const entry: AuditTrailEntry = {
+    id: `audit_${crypto.randomUUID()}`,
+    createdAt: input.createdAt ?? Date.now(),
+    ...input
+  };
+  await AuditTrailEntity.create(env, entry);
+  return entry;
+}
+
+async function logAuditFromContext(
+  c: any,
+  action: AuditAction,
+  summary: string,
+  targetType: AuditTrailEntry['targetType'],
+  targetId?: string,
+  metadata?: AuditTrailEntry['metadata']
+) {
+  const actor = c.get('user');
+  if (!actor?.sub || !actor?.email) return;
+
+  await createAuditEntry(c.env, {
+    actorUserId: actor.sub,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+    action,
+    summary,
+    targetType,
+    targetId,
+    metadata
+  });
+}
+
 async function listAdminUsers(env: Env): Promise<User[]> {
   await UserEntity.ensureSeed(env);
   const users = await UserEntity.list(env);
@@ -119,16 +152,18 @@ async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User
   if (admins.length === 0) return;
 
   const subject = `New booking request for ${venue.name}`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>New booking request submitted</h2>
-      <p><strong>Venue:</strong> ${escapeHtml(venue.name)}</p>
-      <p><strong>Requester:</strong> ${escapeHtml(requester.name)} (${escapeHtml(requester.email)})</p>
-      <p><strong>Schedule:</strong> ${escapeHtml(formatBookingWindow(booking))}</p>
-      <p><strong>Purpose:</strong> ${escapeHtml(booking.purpose)}</p>
-      <p><strong>Status:</strong> Pending approval</p>
-    </div>
-  `;
+  const html = renderStandardEmail({
+    eyebrow: 'New Booking Request',
+    title: venue.name,
+    intro: `${requester.name} submitted a booking request that requires admin review.`,
+    sections: [
+      { label: 'Requester', value: `${requester.name} (${requester.email})` },
+      { label: 'Schedule', value: formatBookingWindow(booking) },
+      { label: 'Purpose', value: booking.purpose },
+      { label: 'Status', value: 'Pending approval' }
+    ],
+    footer: 'Review the request from the admin dashboard to approve or reject it.'
+  });
 
   await Promise.all(
     admins.map(async (admin) => {
@@ -150,15 +185,23 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
   const statusLabel = status === 'APPROVED' ? 'approved' : 'rejected';
   const title = status === 'APPROVED' ? 'Booking approved' : 'Booking rejected';
   const subject = `${venue.name} booking ${statusLabel}`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Your booking has been ${statusLabel}</h2>
-      <p><strong>Venue:</strong> ${escapeHtml(venue.name)}</p>
-      <p><strong>Schedule:</strong> ${escapeHtml(formatBookingWindow(booking))}</p>
-      <p><strong>Purpose:</strong> ${escapeHtml(booking.purpose)}</p>
-      <p><strong>Status:</strong> ${escapeHtml(status)}</p>
-    </div>
-  `;
+  const html = renderStandardEmail({
+    eyebrow: status === 'APPROVED' ? 'Booking Receipt' : 'Booking Update',
+    title: title,
+    intro: status === 'APPROVED'
+      ? `Your booking for ${venue.name} has been approved. This email serves as your booking receipt.`
+      : `Your booking for ${venue.name} was rejected after review.`,
+    accent: status === 'APPROVED' ? '#0f8f6f' : '#b91c1c',
+    sections: [
+      { label: 'Venue', value: venue.name },
+      { label: 'Schedule', value: formatBookingWindow(booking) },
+      { label: 'Purpose', value: booking.purpose },
+      { label: 'Status', value: status }
+    ],
+    footer: status === 'APPROVED'
+      ? 'Please keep this receipt and bring any required supporting documents on the booking date.'
+      : 'You may submit a new request after adjusting the booking details if needed.'
+  });
 
   await createNotification(env, {
     userId: requester.id,
@@ -211,6 +254,56 @@ async function withBookingLock<T>(c: any, venueId: string, date: string, fn: () 
   }
 }
 
+type BookingSubmissionInput = {
+  venueId: string;
+  date: string;
+  session?: SessionSlot;
+  startTime?: string;
+  endTime?: string;
+  purpose: string;
+  programType?: Booking['programType'];
+  documents?: Booking['documents'];
+};
+
+async function createBookingSubmission(
+  c: any,
+  requester: User,
+  venueData: Venue,
+  input: BookingSubmissionInput
+): Promise<Booking> {
+  return withBookingLock(c, input.venueId, input.date, async () => {
+    const available = await BookingEntity.checkAvailability(
+      c.env,
+      input.venueId,
+      input.date,
+      input.startTime,
+      input.endTime,
+      input.session
+    );
+    if (!available) {
+      throw new Error(`This slot is already reserved or pending approval on ${input.date}`);
+    }
+
+    const booking: Booking = {
+      id: crypto.randomUUID(),
+      venueId: input.venueId,
+      userId: requester.id,
+      userName: requester.name || requester.email.split('@')[0],
+      date: input.date,
+      session: input.session,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      status: 'PENDING',
+      createdAt: Date.now(),
+      purpose: input.purpose,
+      programType: input.programType,
+      documents: input.documents
+    };
+
+    return BookingEntity.create(c.env, booking);
+  });
+}
+
 export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }>) {
   const normalizeEmail = (value: string) => value.trim().toLowerCase();
   const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -246,6 +339,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
       const res = await globalDO.casPut('settings:app', version, { ...current, heroImageUrl });
       if (res.ok) {
+        await logAuditFromContext(c, 'SETTINGS_UPDATED', 'Updated landing hero image', 'SETTINGS', 'hero-image');
         return ok(c, { heroImageUrl });
       }
     }
@@ -266,7 +360,14 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       const current = doc?.data ?? {};
       const version = doc?.v ?? 0;
       const res = await globalDO.casPut('settings:app', version, { ...current, ...updates });
-      if (res.ok) return ok(c, { ...current, ...updates });
+      if (res.ok) {
+        await logAuditFromContext(c, 'SETTINGS_UPDATED', 'Updated branding settings', 'SETTINGS', 'branding', {
+          appName: updates.appName ?? null,
+          appLabel: updates.appLabel ?? null,
+          hasAppIcon: Boolean(updates.appIconUrl)
+        });
+        return ok(c, { ...current, ...updates });
+      }
     }
     return bad(c, 'Failed to update branding settings. Please retry.');
   });
@@ -276,16 +377,22 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     await VenueEntity.ensureSeed(c.env);
     const venueIndex = new Index<string>(c.env, VenueEntity.indexName);
     const ids = await venueIndex.list();
-    const items: Venue[] = [];
-
-    for (const id of ids) {
+    const settled = await Promise.all(ids.map(async (id) => {
       const venue = new VenueEntity(c.env, id);
       if (await venue.exists()) {
-        items.push(await venue.getState());
-      } else {
-        await venueIndex.remove(id);
+        return { id, venue: await venue.getState(), stale: false as const };
       }
+      return { id, venue: null, stale: true as const };
+    }));
+
+    const staleIds = settled.filter((entry) => entry.stale).map((entry) => entry.id);
+    if (staleIds.length > 0) {
+      await venueIndex.removeBatch(staleIds);
     }
+
+    const items = settled
+      .filter((entry): entry is { id: string; venue: Venue; stale: false } => entry.venue !== null)
+      .map((entry) => entry.venue);
 
     return ok(c, items);
   });
@@ -359,6 +466,10 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     };
 
     const created = await VenueEntity.create(c.env, newVenue);
+    await logAuditFromContext(c, 'VENUE_CREATED', `Created venue ${created.name}`, 'VENUE', created.id, {
+      location: created.location,
+      capacity: created.capacity
+    });
     return ok(c, created);
   });
 
@@ -385,7 +496,13 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
 
     await venue.patch(updates);
-    return ok(c, await venue.getState());
+    const updatedVenue = await venue.getState();
+    await logAuditFromContext(c, 'VENUE_UPDATED', `Updated venue ${updatedVenue.name}`, 'VENUE', updatedVenue.id, {
+      location: updatedVenue.location,
+      capacity: updatedVenue.capacity,
+      isAvailable: updatedVenue.isAvailable !== false
+    });
+    return ok(c, updatedVenue);
   });
 
   app.delete('/api/venues/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -402,7 +519,9 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       return bad(c, 'Cannot delete venue with active bookings');
     }
 
+    const venueData = await venue.getState();
     await venue.delete();
+    await logAuditFromContext(c, 'VENUE_DELETED', `Deleted venue ${venueData.name}`, 'VENUE', id);
     return ok(c, { deleted: true, id });
   });
 
@@ -484,6 +603,9 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       role,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`
     });
+    await logAuditFromContext(c, 'USER_CREATED', `Created user ${created.email}`, 'USER', created.id, {
+      role: created.role
+    });
     return ok(c, created);
   });
 
@@ -505,7 +627,11 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     if (Object.keys(updates).length === 0) return bad(c, 'No updates provided');
 
     await user.patch(updates);
-    return ok(c, await user.getState());
+    const updatedUser = await user.getState();
+    await logAuditFromContext(c, 'USER_UPDATED', `Updated user ${updatedUser.email}`, 'USER', updatedUser.id, {
+      role: updatedUser.role
+    });
+    return ok(c, updatedUser);
   });
 
   app.post('/api/admin/users/:id/role', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -519,7 +645,11 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     if (!await user.exists()) return notFound(c, 'User not found');
 
     await user.patch({ role });
-    return ok(c, await user.getState());
+    const updatedUser = await user.getState();
+    await logAuditFromContext(c, 'USER_UPDATED', `Changed role for ${updatedUser.email} to ${updatedUser.role}`, 'USER', updatedUser.id, {
+      role: updatedUser.role
+    });
+    return ok(c, updatedUser);
   });
 
   app.delete('/api/admin/users/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -542,6 +672,9 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
 
     await UserEntity.delete(c.env, id);
+    await logAuditFromContext(c, 'USER_DELETED', `Deleted user ${state.email}`, 'USER', id, {
+      role: state.role
+    });
     return ok(c, { deleted: true, id });
   });
 
@@ -552,6 +685,12 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       count: items.length,
       items
     });
+  });
+
+  app.get('/api/admin/audit-trail', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const list = await AuditTrailEntity.list(c.env);
+    const items = [...list.items].sort((a, b) => b.createdAt - a.createdAt);
+    return ok(c, items);
   });
 
   app.get('/api/notifications', verifyAuthStrict, async (c) => {
@@ -585,7 +724,6 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     // Use userId from token, ignore body userId
     const userId = user.sub;
     const requester = await new UserEntity(c.env, userId).getState();
-    const userName = requester.name || user.email.split('@')[0];
 
     // Validation
     if (!venueId || !date || (!session && (!startTime || !endTime)) || !purpose) {
@@ -603,29 +741,15 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     }
 
     try {
-      const created = await withBookingLock(c, venueId, date, async () => {
-        const available = await BookingEntity.checkAvailability(c.env, venueId, date, startTime, endTime, session as SessionSlot);
-        if (!available) {
-          throw new Error('This slot is already reserved or pending approval');
-        }
-
-        const newBooking: Booking = {
-          id: crypto.randomUUID(),
-          venueId,
-          userId,
-          userName,
-          date,
-          session: session as SessionSlot,
-          startTime,
-          endTime,
-          status: 'PENDING',
-          createdAt: Date.now(),
-          purpose,
-          programType: body.programType,
-          documents: body.documents
-        };
-
-        return BookingEntity.create(c.env, newBooking);
+      const created = await createBookingSubmission(c, requester, venueData, {
+        venueId,
+        date,
+        session: session as SessionSlot,
+        startTime,
+        endTime,
+        purpose,
+        programType: body.programType,
+        documents: body.documents
       });
 
       await sendAdminBookingEmail(c.env, created, requester, venueData);
@@ -638,10 +762,91 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
         venueId: created.venueId,
         link: '/bookings'
       });
+      await logAuditFromContext(c, 'BOOKING_CREATED', `Created booking for ${venueData.name} on ${created.date}`, 'BOOKING', created.id, {
+        venueId: created.venueId,
+        date: created.date
+      });
 
       return ok(c, created);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create booking';
+      return bad(c, message);
+    }
+  });
+
+  app.post('/api/bookings/batch', verifyAuthStrict, async (c) => {
+    const body = await c.req.json() as {
+      venueId?: string;
+      dates?: string[];
+      session?: SessionSlot;
+      startTime?: string;
+      endTime?: string;
+      purpose?: string;
+      programType?: Booking['programType'];
+      documents?: Booking['documents'];
+    };
+    const user = c.get('user');
+    const venueId = body.venueId;
+    const purpose = body.purpose?.trim();
+    const uniqueDates = Array.from(new Set((body.dates ?? []).filter(Boolean))).sort();
+
+    if (!venueId || uniqueDates.length === 0 || (!body.session && (!body.startTime || !body.endTime)) || !purpose) {
+      return bad(c, 'Missing required booking fields');
+    }
+
+    const venue = new VenueEntity(c.env, venueId);
+    if (!await venue.exists()) {
+      return notFound(c, 'Venue not found');
+    }
+    const venueData = await venue.getState();
+    if (venueData.isAvailable === false) {
+      const reason = venueData.unavailableReason ? ` (${venueData.unavailableReason})` : '';
+      return bad(c, `Venue is unavailable for booking${reason}`);
+    }
+
+    const requester = await new UserEntity(c.env, user.sub).getState();
+
+    try {
+      const createdBookings: Booking[] = [];
+      for (const bookingDate of uniqueDates) {
+        const created = await createBookingSubmission(c, requester, venueData, {
+          venueId,
+          date: bookingDate,
+          session: body.session,
+          startTime: body.startTime,
+          endTime: body.endTime,
+          purpose,
+          programType: body.programType,
+          documents: body.documents
+        });
+        createdBookings.push(created);
+      }
+
+      await Promise.all([
+        ...createdBookings.map((booking) => sendAdminBookingEmail(c.env, booking, requester, venueData)),
+        ...createdBookings.map((booking) =>
+          createNotification(c.env, {
+            userId: requester.id,
+            type: 'BOOKING_CREATED',
+            title: 'Booking submitted',
+            message: `Your request for ${venueData.name} on ${formatBookingWindow(booking)} was submitted.`,
+            bookingId: booking.id,
+            venueId: booking.venueId,
+            link: '/bookings'
+          })
+        )
+      ]);
+      await logAuditFromContext(c, 'BOOKING_BATCH_CREATED', `Created ${createdBookings.length} bookings for ${venueData.name}`, 'BOOKING', createdBookings[0]?.id, {
+        venueId,
+        count: createdBookings.length
+      });
+
+      return ok(c, {
+        count: createdBookings.length,
+        items: createdBookings
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create bookings';
       return bad(c, message);
     }
   });
@@ -683,6 +888,17 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     if (status === 'APPROVED' || status === 'REJECTED') {
       await sendRequesterStatusUpdate(c.env, updatedBooking, requester, venue, status);
     }
+    await logAuditFromContext(
+      c,
+      status === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_REJECTED',
+      `${status} booking ${updatedBooking.id} for ${venue.name}`,
+      'BOOKING',
+      updatedBooking.id,
+      {
+        venueId: updatedBooking.venueId,
+        userId: updatedBooking.userId
+      }
+    );
 
     return ok(c, updatedBooking);
   });
@@ -720,6 +936,10 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
         link: '/admin/history'
       })
     ));
+    await logAuditFromContext(c, 'BOOKING_CANCELLED', `Cancelled booking ${bookingData.id} for ${venue.name}`, 'BOOKING', bookingData.id, {
+      venueId: bookingData.venueId,
+      userId: bookingData.userId
+    });
     return ok(c, await booking.getState());
   });
 

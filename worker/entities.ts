@@ -1,5 +1,5 @@
 import { IndexedEntity } from "./core-utils";
-import type { User, Venue, Booking, SessionSlot, Notification } from "@shared/types";
+import type { User, Venue, Booking, SessionSlot, Notification, AuditTrailEntry } from "@shared/types";
 import { MOCK_USERS, MOCK_VENUES, MOCK_BOOKINGS } from "@shared/mock-data";
 export class UserEntity extends IndexedEntity<User> {
   static readonly entityName = "user";
@@ -84,6 +84,19 @@ export class NotificationEntity extends IndexedEntity<Notification> {
     type: "BOOKING_CREATED",
     title: "",
     message: "",
+    createdAt: 0
+  };
+}
+export class AuditTrailEntity extends IndexedEntity<AuditTrailEntry> {
+  static readonly entityName = "audit";
+  static readonly indexName = "audit-trail";
+  static readonly initialState: AuditTrailEntry = {
+    id: "",
+    actorUserId: "",
+    actorEmail: "",
+    action: "AUTH_SIGNIN",
+    summary: "",
+    targetType: "AUTH",
     createdAt: 0
   };
 }

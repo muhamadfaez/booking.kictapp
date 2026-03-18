@@ -43,7 +43,7 @@ export default function VenuePage() {
 
   return (
     <AppLayout container>
-      <div className="space-y-6 h-[calc(100vh-100px)] flex flex-col">
+      <div className="space-y-6 lg:h-[calc(100svh-100px)] flex flex-col">
         <header className="shrink-0">
           <h1 className="text-3xl font-bold tracking-tight">Venue</h1>
           <p className="text-muted-foreground">
@@ -51,12 +51,12 @@ export default function VenuePage() {
           </p>
         </header>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-6">
-          <section className="min-h-0 rounded-lg border bg-card overflow-hidden flex flex-col">
+        <div className="grid grid-cols-1 lg:flex-1 lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)] gap-6">
+          <section className="rounded-lg border bg-card overflow-hidden flex flex-col lg:min-h-0">
             <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
               <h2 className="text-base font-semibold">Venue List</h2>
             </div>
-            <div className="p-3 space-y-3 overflow-y-auto">
+            <div className="p-3 space-y-3 max-h-[22rem] overflow-y-auto lg:max-h-none">
               {venuesLoading ? (
                 Array.from({ length: 5 }, (_, i) => (
                   <Card key={i}>
@@ -99,11 +99,11 @@ export default function VenuePage() {
             </div>
           </section>
 
-          <section className="min-h-0 overflow-hidden space-y-3 flex flex-col">
+          <section className="space-y-3 flex flex-col lg:min-h-0 lg:overflow-hidden">
             <h2 className="text-lg font-semibold shrink-0">
               {selectedVenue ? `${selectedVenue.name} Calendar` : 'Venue Calendar'}
             </h2>
-            <div className="flex-1 min-h-[420px] overflow-hidden rounded-lg border bg-card">
+            <div className="min-h-[520px] lg:flex-1 lg:min-h-[420px] overflow-hidden rounded-lg border bg-card">
               {!selectedVenue || occupancyLoading ? (
                 <div className="h-full flex items-center justify-center text-muted-foreground">
                   <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -117,6 +117,7 @@ export default function VenuePage() {
                   bookings={occupancyBookings}
                   currentUserRole={user?.role}
                   currentUserId={user?.id}
+                  hideBookingOwner
                 />
               )}
             </div>

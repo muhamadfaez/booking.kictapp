@@ -1,5 +1,6 @@
-const CACHE_NAME = 'bookingtrack-shell-v1';
+const CACHE_NAME = 'bookingtrack-shell-v2';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/app-icon.svg', '/app-icon-192.svg', '/app-icon-512.svg'];
+const STATIC_ASSET_PATTERN = /\.(?:js|css|png|jpg|jpeg|svg|webp|gif|woff2?)$/i;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -22,22 +23,41 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) return;
 
-  event.respondWith(
-    caches.match(request).then(async (cached) => {
-      if (cached) return cached;
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put('/', response.clone());
+          }
+          return response;
+        } catch (error) {
+          const fallback = await caches.match('/');
+          if (fallback) return fallback;
+          throw error;
+        }
+      })()
+    );
+    return;
+  }
 
-      try {
+  if (url.origin === self.location.origin && (url.pathname.startsWith('/assets/') || STATIC_ASSET_PATTERN.test(url.pathname))) {
+    event.respondWith(
+      caches.match(request).then(async (cached) => {
+        if (cached) return cached;
+
         const response = await fetch(request);
-        if (response.ok && url.origin === self.location.origin) {
+        if (response.ok) {
           const cache = await caches.open(CACHE_NAME);
           cache.put(request, response.clone());
         }
         return response;
-      } catch (error) {
-        const fallback = await caches.match('/');
-        if (fallback) return fallback;
-        throw error;
-      }
-    })
-  );
+      })
+    );
+    return;
+  }
+
+  event.respondWith(fetch(request));
 });

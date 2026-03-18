@@ -2,7 +2,7 @@ import '@/lib/errorReporter';
 import { enableMapSet } from "immer";
 import { Toaster } from "sonner";
 enableMapSet();
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, Suspense, lazy, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   createBrowserRouter,
@@ -12,38 +12,63 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
-import MyBookingsPage from '@/pages/MyBookingsPage';
 import '@/index.css'
-import LandingPage from '@/pages/LandingPage'
-import LoginPage from '@/pages/LoginPage'
-import DashboardPage from '@/pages/DashboardPage'
-import VenuePage from '@/pages/VenuePage'
-import AdminPage from '@/pages/AdminPage'
-import AdminUsersPage from '@/pages/AdminUsersPage'
-import AdminSettingsPage from '@/pages/AdminSettingsPage'
-import VenueManagementPage from '@/pages/VenueManagementPage'
-import BookingHistoryPage from '@/pages/BookingHistoryPage'
-import SchedulePage from '@/pages/SchedulePage'
 import { AuthProvider } from '@/lib/mock-auth'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useGoogleOAuthConfig } from '@/lib/google-oauth'
+import { api } from '@/lib/api-client'
+import { preloadRoute } from '@/lib/route-preload'
+import LandingPage from '@/pages/LandingPage'
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
+  },
+});
+
+const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
+const VenuePage = lazy(() => import('@/pages/VenuePage'));
+const MyBookingsPage = lazy(() => import('@/pages/MyBookingsPage'));
+const AdminPage = lazy(() => import('@/pages/AdminPage'));
+const VenueManagementPage = lazy(() => import('@/pages/VenueManagementPage'));
+const AdminUsersPage = lazy(() => import('@/pages/AdminUsersPage'));
+const AdminSettingsPage = lazy(() => import('@/pages/AdminSettingsPage'));
+const BookingHistoryPage = lazy(() => import('@/pages/BookingHistoryPage'));
+const AdminAuditTrailPage = lazy(() => import('@/pages/AdminAuditTrailPage'));
+
+function RouteLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+function withSuspense(element: React.ReactNode) {
+  return <Suspense fallback={<RouteLoader />}>{element}</Suspense>;
+}
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <LandingPage />,
+    element: withSuspense(<LandingPage />),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/login",
-    element: <LoginPage />,
+    element: withSuspense(<LoginPage />),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/dashboard",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="USER" disallowAdmin>
         <DashboardPage />
       </ProtectedRoute>
@@ -52,7 +77,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/schedule",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="USER">
         <SchedulePage />
       </ProtectedRoute>
@@ -61,7 +86,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/venues",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="USER">
         <VenuePage />
       </ProtectedRoute>
@@ -70,7 +95,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/bookings",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="USER">
         <MyBookingsPage />
       </ProtectedRoute>
@@ -79,7 +104,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/admin",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="ADMIN">
         <AdminPage />
       </ProtectedRoute>
@@ -88,7 +113,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/admin/venues",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="ADMIN">
         <VenueManagementPage />
       </ProtectedRoute>
@@ -97,7 +122,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/admin/users",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="ADMIN">
         <AdminUsersPage />
       </ProtectedRoute>
@@ -106,7 +131,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/admin/settings",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="ADMIN">
         <AdminSettingsPage />
       </ProtectedRoute>
@@ -115,9 +140,18 @@ const router = createBrowserRouter([
   },
   {
     path: "/admin/history",
-    element: (
+    element: withSuspense(
       <ProtectedRoute requiredRole="ADMIN">
         <BookingHistoryPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/admin/audit",
+    element: withSuspense(
+      <ProtectedRoute requiredRole="ADMIN">
+        <AdminAuditTrailPage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -136,11 +170,45 @@ function AppRoot() {
   const { googleClientId, isGoogleOAuthEnabled } = useGoogleOAuthConfig();
 
   useEffect(() => {
+    preloadRoute('/');
+
+    const preloadCore = () => {
+      void queryClient.prefetchQuery({
+        queryKey: ['settings'],
+        queryFn: () => api('/api/settings'),
+      });
+      void queryClient.prefetchQuery({
+        queryKey: ['venues'],
+        queryFn: () => api('/api/venues'),
+      });
+      preloadRoute('/login');
+    };
+
+    const requestIdle = globalThis.requestIdleCallback;
+    const cancelIdle = globalThis.cancelIdleCallback;
+
+    if (typeof requestIdle === 'function' && typeof cancelIdle === 'function') {
+      const idleId = requestIdle(preloadCore, { timeout: 1200 });
+      return () => cancelIdle(idleId);
+    }
+
+    const timer = globalThis.setTimeout(preloadCore, 300);
+    return () => globalThis.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
     const register = async () => {
       try {
-        await navigator.serviceWorker.register('/sw.js');
+        if (!import.meta.env.PROD) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        await registration.update();
       } catch (error) {
         console.error('Service worker registration failed:', error);
       }

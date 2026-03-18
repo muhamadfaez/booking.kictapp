@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, Mail, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useGoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
@@ -168,6 +168,9 @@ export function LoginDialog({ isOpen, onClose, onSuccess }: LoginDialogProps) {
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md p-8 border-border/50 shadow-xl bg-background rounded-2xl">
         <DialogTitle className="sr-only">Sign In to IIUM Community</DialogTitle>
+        <DialogDescription className="sr-only">
+          Sign in with Google or request a one-time verification code to access venue booking.
+        </DialogDescription>
         <div className="w-full space-y-8">
           {/* Logo and Title */}
           <div className="text-center space-y-4">

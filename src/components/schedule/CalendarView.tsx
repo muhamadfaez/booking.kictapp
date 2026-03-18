@@ -7,19 +7,8 @@ import {
 } from 'date-fns';
 import type { Venue, Booking, UserRole } from "@shared/types";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Clock, User as UserIcon, Lock, ChevronLeft, ChevronRight, MapPin, Calendar as CalendarIcon, Filter, Check } from "lucide-react";
+import { Clock, ChevronLeft, ChevronRight, MapPin, Filter, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-    DropdownMenuCheckboxItem,
-} from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 type CalendarViewMode = 'day' | 'week' | 'month' | 'year';
@@ -31,7 +20,7 @@ interface CalendarViewProps {
     bookings: Booking[];
     currentUserRole?: UserRole;
     currentUserId?: string;
-    onVenueFilterChange?: (venueIds: string[]) => void;
+    hideBookingOwner?: boolean;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -43,11 +32,10 @@ export function CalendarView({
     bookings,
     currentUserRole,
     currentUserId,
-    onVenueFilterChange
+    hideBookingOwner = false,
 }: CalendarViewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState<CalendarViewMode>('week');
-    const [selectedVenues, setSelectedVenues] = useState<string[]>([]);
 
     // Helper to parse "YYYY-MM-DD" string as local date (00:00:00)
     // Prevents timezone issues where new Date("2026-02-28") might become Feb 27th in certain TZs
@@ -58,24 +46,6 @@ export function CalendarView({
             return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         }
         return new Date(dateStr);
-    };
-
-    // Initialize selected venues
-    useEffect(() => {
-        if (venues.length > 0 && selectedVenues.length === 0) {
-            const allIds = venues.map(v => v.id);
-            setSelectedVenues(allIds);
-            onVenueFilterChange?.(allIds);
-        }
-    }, [onVenueFilterChange, selectedVenues.length, venues]);
-
-    const handleVenueToggle = (venueId: string) => {
-        const newSelection = selectedVenues.includes(venueId)
-            ? selectedVenues.filter(id => id !== venueId)
-            : [...selectedVenues, venueId];
-
-        setSelectedVenues(newSelection);
-        onVenueFilterChange?.(newSelection);
     };
 
     // Calculate the start of the current view range
@@ -148,6 +118,10 @@ export function CalendarView({
     };
 
     const getVenueColor = (venueId: string) => {
+        if (hideBookingOwner) {
+            return "bg-red-50 border-red-500 text-red-700 hover:bg-red-100";
+        }
+
         const hash = venueId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const colors = [
             "bg-blue-100 border-blue-500 text-blue-700 hover:bg-blue-200",
@@ -337,30 +311,6 @@ export function CalendarView({
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8 gap-2">
-                                <Filter className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Venues</span>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuLabel>Filter Venues</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {venues.map(venue => (
-                                <DropdownMenuCheckboxItem
-                                    key={venue.id}
-                                    checked={selectedVenues.includes(venue.id)}
-                                    onCheckedChange={() => handleVenueToggle(venue.id)}
-                                >
-                                    {venue.name}
-                                </DropdownMenuCheckboxItem>
-                            ))}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <div className="hidden sm:block h-6 w-px bg-border mx-1" />
-
                     <div className="flex items-center bg-muted p-1 rounded-md">
                         {(['day', 'week', 'month', 'year'] as const).map((v) => (
                             <button
@@ -447,7 +397,7 @@ export function CalendarView({
                                                 b.status !== 'REJECTED' &&
                                                 b.status !== 'CANCELLED'
                                         );
-                                        const visibleBookings = dayBookings.filter(b => selectedVenues.includes(b.venueId));
+                                        const visibleBookings = dayBookings.filter(b => venues.some((venue) => venue.id === b.venueId));
 
                                         // Calculate layout for overlaps
                                         const overlapLayout = calculateLayout(visibleBookings);
@@ -470,10 +420,12 @@ export function CalendarView({
                                                     if (!venue) return null;
 
                                                     const position = getPositionStyle(booking.startTime, booking.endTime, booking.session);
-                                                    const layoutStyle = overlapLayout[booking.id] || { left: '0%', width: '100%' };
+                                                    const layoutStyle = hideBookingOwner
+                                                        ? { left: '0%', width: '100%' }
+                                                        : (overlapLayout[booking.id] || { left: '0%', width: '100%' });
 
                                                     const isMyBooking = booking.userId === currentUserId;
-                                                    const canSeeDetails = currentUserRole === 'ADMIN' || isMyBooking;
+                                                    const canSeeDetails = !hideBookingOwner && (currentUserRole === 'ADMIN' || isMyBooking);
 
                                                     return (
                                                         <div
@@ -482,12 +434,13 @@ export function CalendarView({
                                                             className={cn(
                                                                 "absolute rounded border-l-4 p-1 text-xs transition-all cursor-pointer shadow-sm overflow-hidden hover:z-50 hover:shadow-md hover:ring-1 hover:ring-ring",
                                                                 getVenueColor(booking.venueId),
-                                                                !canSeeDetails && "opacity-80 grayscale"
+                                                                !canSeeDetails && "opacity-95"
                                                             )}
                                                             style={{
                                                                 ...position,
                                                                 left: layoutStyle.left,
-                                                                width: layoutStyle.width
+                                                                width: layoutStyle.width,
+                                                                right: hideBookingOwner ? '0.25rem' : undefined
                                                             }}
                                                         >
                                                             {getBookingContent(booking, venue, false, canSeeDetails)}
@@ -524,7 +477,7 @@ export function CalendarView({
                                     const dayBookings = bookings.filter(
                                         b =>
                                             isSameDay(parseLocalDate(b.date), day) &&
-                                            selectedVenues.includes(b.venueId) &&
+                                            venues.some((venue) => venue.id === b.venueId) &&
                                             b.status !== 'REJECTED' &&
                                             b.status !== 'CANCELLED'
                                     );
@@ -562,7 +515,7 @@ export function CalendarView({
                                                             title={`${booking.purpose} (${formatBookingTime(booking)})`}
                                                         >
                                                             <div className="flex justify-between items-center gap-1">
-                                                                <span className="font-bold truncate">{booking.purpose}</span>
+                                                                <span className="font-bold truncate">{hideBookingOwner ? 'Booked' : booking.purpose}</span>
                                                             </div>
                                                             <div className="opacity-90 font-medium truncate text-[9px] flex items-center gap-1">
                                                                 <Clock className="w-2.5 h-2.5" />
@@ -605,7 +558,7 @@ export function CalendarView({
                                             const dayBookings = bookings.filter(
                                                 b =>
                                                     isSameDay(parseLocalDate(b.date), day) &&
-                                                    selectedVenues.includes(b.venueId) &&
+                                                    venues.some((venue) => venue.id === b.venueId) &&
                                                     b.status !== 'REJECTED' &&
                                                     b.status !== 'CANCELLED'
                                             );
@@ -642,10 +595,12 @@ export function CalendarView({
                     <div className="bg-card w-full max-w-sm rounded-lg border shadow-lg overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-4 border-b flex justify-between items-start bg-muted/20">
                             <div>
-                                <h3 className="font-semibold text-lg leading-tight">{selectedBooking.purpose}</h3>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    Booked by {(currentUserRole === 'ADMIN' || selectedBooking.userId === currentUserId) ? selectedBooking.userName : "Hidden User"}
-                                </p>
+                                <h3 className="font-semibold text-lg leading-tight">{hideBookingOwner ? 'Booked Slot' : selectedBooking.purpose}</h3>
+                                {!hideBookingOwner ? (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Booked by {(currentUserRole === 'ADMIN' || selectedBooking.userId === currentUserId) ? selectedBooking.userName : "Hidden User"}
+                                    </p>
+                                ) : null}
                             </div>
                             <Button
                                 variant="ghost"

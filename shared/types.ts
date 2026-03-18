@@ -62,6 +62,33 @@ export interface Notification {
   venueId?: string;
   link?: string;
 }
+export type AuditAction =
+  | 'AUTH_OTP_REQUESTED'
+  | 'AUTH_SIGNIN'
+  | 'BOOKING_CREATED'
+  | 'BOOKING_APPROVED'
+  | 'BOOKING_REJECTED'
+  | 'BOOKING_CANCELLED'
+  | 'BOOKING_BATCH_CREATED'
+  | 'VENUE_CREATED'
+  | 'VENUE_UPDATED'
+  | 'VENUE_DELETED'
+  | 'USER_CREATED'
+  | 'USER_UPDATED'
+  | 'USER_DELETED'
+  | 'SETTINGS_UPDATED';
+export interface AuditTrailEntry {
+  id: string;
+  actorUserId: string;
+  actorEmail: string;
+  actorRole?: UserRole;
+  action: AuditAction;
+  summary: string;
+  targetType: 'BOOKING' | 'VENUE' | 'USER' | 'SETTINGS' | 'AUTH';
+  targetId?: string;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
+  createdAt: number;
+}
 export interface AppSettings {
   heroImageUrl?: string;
   appName?: string;

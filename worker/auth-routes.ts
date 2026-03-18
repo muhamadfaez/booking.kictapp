@@ -2,9 +2,9 @@ import { Hono } from "hono";
 import { sign } from 'hono/jwt';
 import type { Env } from './core-utils';
 import { ok, bad } from './core-utils';
-import { UserEntity } from "./entities";
-import type { User } from "@shared/types";
-import { GoogleMailService } from './mail';
+import { UserEntity, AuditTrailEntity } from "./entities";
+import type { User, AuditTrailEntry } from "@shared/types";
+import { GoogleMailService, renderStandardEmail } from './mail';
 import { recordSignIn } from './signin-tracker';
 
 
@@ -24,6 +24,15 @@ async function requireJwtSecret(env: Env): Promise<string> {
         throw new Error('JWT_SECRET is missing or too short');
     }
     return env.JWT_SECRET;
+}
+
+async function createAuthAudit(env: Env, input: Omit<AuditTrailEntry, 'id' | 'createdAt'> & { createdAt?: number }) {
+    const entry: AuditTrailEntry = {
+        id: `audit_${crypto.randomUUID()}`,
+        createdAt: input.createdAt ?? Date.now(),
+        ...input
+    };
+    await AuditTrailEntity.create(env, entry);
 }
 
 export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }>) {
@@ -61,15 +70,18 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             const mailer = new GoogleMailService(c.env);
 
             const subject = `Your Verification Code: ${code}`;
-            const html = `
-                <div style="font-family: sans-serif; padding: 20px;">
-                    <h2>Sign in to IIUM Booking</h2>
-                    <p>Your verification code is:</p>
-                    <h1 style="font-size: 32px; letter-spacing: 5px; color: #4F46E5;">${code}</h1>
-                    <p>This code will expire in 5 minutes.</p>
-                    <p style="color: #666; font-size: 12px; margin-top: 30px;">If you didn't request this code, you can ignore this email.</p>
-                </div>
-            `;
+            const html = renderStandardEmail({
+                eyebrow: 'One-Time Passcode',
+                title: 'Verify Your Sign In',
+                intro: 'Use the verification code below to continue signing in to the KICT Booking platform.',
+                accent: '#4F46E5',
+                callout: code,
+                sections: [
+                    { label: 'Expires In', value: '5 minutes' },
+                    { label: 'Requested For', value: cleanEmail }
+                ],
+                footer: "If you didn't request this code, you can safely ignore this message."
+            });
 
             await mailer.sendEmail(cleanEmail, subject, { html });
             console.log(`[AUTH] Email sent to ${cleanEmail}`);
@@ -82,6 +94,15 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
                 debugCode: code
             });
         }
+
+        await createAuthAudit(c.env, {
+            actorUserId: `otp:${cleanEmail}`,
+            actorEmail: cleanEmail,
+            action: 'AUTH_OTP_REQUESTED',
+            summary: `OTP requested for ${cleanEmail}`,
+            targetType: 'AUTH',
+            targetId: cleanEmail
+        });
 
         return ok(c, { message: 'OTP sent' });
     });
@@ -138,6 +159,13 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
             };
             await UserEntity.create(c.env, newUser);
             userData = newUser;
+        } else if (!userData.avatar) {
+            const generatedAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
+            await userEntity.patch({ avatar: generatedAvatar });
+            userData = {
+                ...userData,
+                avatar: generatedAvatar
+            };
         }
 
         // Generate JWT
@@ -163,6 +191,17 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         } catch (err) {
             console.error('[AUTH] Failed to record OTP sign-in:', err);
         }
+
+        await createAuthAudit(c.env, {
+            actorUserId: userData.id,
+            actorEmail: userData.email,
+            actorRole: userData.role,
+            action: 'AUTH_SIGNIN',
+            summary: `${userData.email} signed in with OTP`,
+            targetType: 'AUTH',
+            targetId: userData.id,
+            metadata: { method: 'OTP' }
+        });
 
         return ok(c, { token, user: userData });
     });
@@ -240,6 +279,17 @@ export function authRoutes(app: Hono<{ Bindings: Env; Variables: { user: any } }
         } catch (err) {
             console.error('[AUTH] Failed to record Google sign-in:', err);
         }
+
+        await createAuthAudit(c.env, {
+            actorUserId: userData.id,
+            actorEmail: userData.email,
+            actorRole: userData.role,
+            action: 'AUTH_SIGNIN',
+            summary: `${userData.email} signed in with Google`,
+            targetType: 'AUTH',
+            targetId: userData.id,
+            metadata: { method: 'GOOGLE' }
+        });
 
         return ok(c, { token, user: userData });
     });

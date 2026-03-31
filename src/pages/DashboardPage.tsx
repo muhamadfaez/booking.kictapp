@@ -18,17 +18,19 @@ export default function DashboardPage() {
   const { data: venues, isLoading: venuesLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues'),
-    refetchOnWindowFocus: true,
-    refetchInterval: 15000,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 10 * 60 * 1000
   });
   const { data: bookings = [], refetch: refetchBookings } = useQuery({
     queryKey: ['my-bookings', user?.id],
     queryFn: () => api<Booking[]>(`/api/bookings?userId=${user?.id}`),
     enabled: !!user?.id,
-    refetchOnWindowFocus: true,
-    refetchInterval: user?.id ? 15000 : false,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: user?.id ? 60000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 30 * 1000
   });
 
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;

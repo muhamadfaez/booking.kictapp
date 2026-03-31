@@ -55,12 +55,73 @@ const ADMIN_NOTIFICATION_STREAM_KEY = 'stream:notifications:admin';
 const USER_NOTIFICATION_STREAM_PREFIX = 'stream:notifications:user:';
 const AUDIT_STREAM_KEY = 'stream:audit-trail';
 const MAX_STREAM_ITEMS = 250;
+const SETTINGS_CACHE_TTL_MS = 60 * 1000;
+const VENUES_CACHE_TTL_MS = 30 * 1000;
+const AVAILABILITY_CACHE_TTL_MS = 15 * 1000;
+const AVAILABILITY_CACHE_LIMIT = 100;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type StoredDoc<T> = { v: number; data: T };
 type BookingLock = { token: string; expiresAt: number };
 type RejectedResult = PromiseRejectedResult;
+type MemoryCache<T> = { value: T; expiresAt: number };
+
+let settingsCache: MemoryCache<AppSettings> | null = null;
+let venuesCache: MemoryCache<Venue[]> | null = null;
+const availabilityCache = new Map<string, MemoryCache<{
+  date: string;
+  session: SessionSlot | null;
+  startTime: string | null;
+  endTime: string | null;
+  availableVenueIds: string[];
+  unavailableVenueIds: string[];
+}>>();
+
+const getCachedValue = <T>(entry: MemoryCache<T> | null): T | null => {
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) return null;
+  return entry.value;
+};
+
+const setCachedValue = <T>(value: T, ttlMs: number): MemoryCache<T> => ({
+  value,
+  expiresAt: Date.now() + ttlMs
+});
+
+const invalidateSettingsCache = () => {
+  settingsCache = null;
+};
+
+const invalidateVenueCaches = () => {
+  venuesCache = null;
+  availabilityCache.clear();
+};
+
+const getAvailabilityCache = (key: string) => {
+  const cached = availabilityCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    availabilityCache.delete(key);
+    return null;
+  }
+  return cached.value;
+};
+
+const setAvailabilityCache = (key: string, value: {
+  date: string;
+  session: SessionSlot | null;
+  startTime: string | null;
+  endTime: string | null;
+  availableVenueIds: string[];
+  unavailableVenueIds: string[];
+}) => {
+  availabilityCache.set(key, setCachedValue(value, AVAILABILITY_CACHE_TTL_MS));
+  if (availabilityCache.size > AVAILABILITY_CACHE_LIMIT) {
+    const oldestKey = availabilityCache.keys().next().value;
+    if (oldestKey) availabilityCache.delete(oldestKey);
+  }
+};
 
 const isRejectedResult = (result: PromiseSettledResult<unknown>): result is RejectedResult =>
   result.status === 'rejected';
@@ -618,9 +679,14 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
   // SETTINGS (Public Read)
   app.get('/api/settings', async (c) => {
+    const cached = getCachedValue(settingsCache);
+    if (cached) return ok(c, cached);
+
     const globalDO = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName('GlobalDurableObject'));
     const doc = await globalDO.getDoc('settings:app') as StoredDoc<AppSettings> | null;
-    return ok(c, doc?.data ?? {});
+    const data = doc?.data ?? {};
+    settingsCache = setCachedValue(data, SETTINGS_CACHE_TTL_MS);
+    return ok(c, data);
   });
 
   // SETTINGS (Admin Write)
@@ -638,6 +704,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
       const res = await globalDO.casPut('settings:app', version, { ...current, heroImageUrl });
       if (res.ok) {
+        invalidateSettingsCache();
         await logAuditFromContext(c, 'SETTINGS_UPDATED', 'Updated landing hero image', 'SETTINGS', 'hero-image');
         return ok(c, { heroImageUrl });
       }
@@ -660,6 +727,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       const version = doc?.v ?? 0;
       const res = await globalDO.casPut('settings:app', version, { ...current, ...updates });
       if (res.ok) {
+        invalidateSettingsCache();
         await logAuditFromContext(c, 'SETTINGS_UPDATED', 'Updated branding settings', 'SETTINGS', 'branding', {
           appName: updates.appName ?? null,
           appLabel: updates.appLabel ?? null,
@@ -673,6 +741,9 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
   // VENUES (Public Read)
   app.get('/api/venues', async (c) => {
+    const cached = getCachedValue(venuesCache);
+    if (cached) return ok(c, cached);
+
     await VenueEntity.ensureSeed(c.env);
     const venueIndex = new Index<string>(c.env, VenueEntity.indexName);
     const ids = await venueIndex.list();
@@ -693,6 +764,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       .filter((entry): entry is { id: string; venue: Venue; stale: false } => entry.venue !== null)
       .map((entry) => entry.venue);
 
+    venuesCache = setCachedValue(items, VENUES_CACHE_TTL_MS);
     return ok(c, items);
   });
 
@@ -705,6 +777,15 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     if (!date) return bad(c, 'Missing date');
     const requestedRange = bookingRange(startTime, endTime, session);
     if (!requestedRange) return bad(c, 'Missing time selection');
+
+    const cacheKey = JSON.stringify({
+      date,
+      session: session ?? null,
+      startTime: startTime ?? null,
+      endTime: endTime ?? null
+    });
+    const cached = getAvailabilityCache(cacheKey);
+    if (cached) return ok(c, cached);
 
     await VenueEntity.ensureSeed(c.env);
     const venues = await VenueEntity.list(c.env);
@@ -734,14 +815,17 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       .filter((v) => !unavailableVenueIds.has(v.id))
       .map((v) => v.id);
 
-    return ok(c, {
+    const result = {
       date,
       session: session ?? null,
       startTime: startTime ?? null,
       endTime: endTime ?? null,
       availableVenueIds,
       unavailableVenueIds: Array.from(unavailableVenueIds)
-    });
+    };
+
+    setAvailabilityCache(cacheKey, result);
+    return ok(c, result);
   });
 
   app.post('/api/venues', verifyAuthStrict, verifyAdminStrict, async (c) => {
@@ -765,6 +849,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     };
 
     const created = await VenueEntity.create(c.env, newVenue);
+    invalidateVenueCaches();
     await logAuditFromContext(c, 'VENUE_CREATED', `Created venue ${created.name}`, 'VENUE', created.id, {
       location: created.location,
       capacity: created.capacity
@@ -796,6 +881,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     await venue.patch(updates);
     const updatedVenue = await venue.getState();
+    invalidateVenueCaches();
     await logAuditFromContext(c, 'VENUE_UPDATED', `Updated venue ${updatedVenue.name}`, 'VENUE', updatedVenue.id, {
       location: updatedVenue.location,
       capacity: updatedVenue.capacity,
@@ -820,6 +906,7 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
     const venueData = await venue.getState();
     await venue.delete();
+    invalidateVenueCaches();
     await logAuditFromContext(c, 'VENUE_DELETED', `Deleted venue ${venueData.name}`, 'VENUE', id);
     return ok(c, { deleted: true, id });
   });

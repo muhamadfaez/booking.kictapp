@@ -20,6 +20,14 @@ const parsePositiveInt = (value: string | undefined, fallback: number) => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 };
 
+const RATE_LIMIT_EXEMPT_PATHS = new Set([
+  '/api/health',
+  '/api/public-config',
+  '/api/settings',
+  '/api/venues',
+  '/api/venues/availability',
+]);
+
 const getAllowedOrigins = (env: Env): Set<string> => {
   const configured = ((env as any).CORS_ALLOWED_ORIGINS as string | undefined) || '';
   const entries = configured
@@ -60,7 +68,7 @@ const incrementRateLimit = async (env: Env, keyPart: string, limitPerMinute: num
 };
 
 app.use('/api/*', async (c, next) => {
-  if (c.req.path === '/api/client-errors') {
+  if (c.req.path === '/api/client-errors' || RATE_LIMIT_EXEMPT_PATHS.has(c.req.path)) {
     await next();
     return;
   }

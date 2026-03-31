@@ -32,9 +32,10 @@ export default function AdminPage() {
     queryKey: ['notifications', user?.id, user?.role],
     queryFn: () => api<Notification[]>('/api/notifications'),
     enabled: !!user,
-    refetchOnWindowFocus: true,
-    refetchInterval: user?.role === 'ADMIN' ? 15000 : false,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: false,
+    staleTime: 30 * 1000
   });
 
   const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);

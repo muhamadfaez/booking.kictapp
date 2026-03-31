@@ -1,5 +1,4 @@
 const routePreloaders: Record<string, () => Promise<unknown>> = {
-  '/': () => import('@/pages/LandingPage'),
   '/login': () => import('@/pages/LoginPage'),
   '/dashboard': () => import('@/pages/DashboardPage'),
   '/admin': () => import('@/pages/AdminPage'),

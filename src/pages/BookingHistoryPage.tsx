@@ -22,17 +22,26 @@ export default function BookingHistoryPage() {
 
     const { data: bookings, isLoading, refetch } = useQuery({
         queryKey: ['all-bookings'],
-        queryFn: () => api<Booking[]>('/api/bookings')
+        queryFn: () => api<Booking[]>('/api/bookings'),
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        staleTime: 60 * 1000
     });
 
     const { data: venues = [] } = useQuery({
         queryKey: ['venues'],
-        queryFn: () => api<Venue[]>('/api/venues')
+        queryFn: () => api<Venue[]>('/api/venues'),
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        staleTime: 10 * 60 * 1000
     });
 
     const { data: users = [] } = useQuery({
         queryKey: ['admin-users'],
-        queryFn: () => api<User[]>('/api/admin/users')
+        queryFn: () => api<User[]>('/api/admin/users'),
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        staleTime: 60 * 1000
     });
 
     const venueMap = useMemo(() => Object.fromEntries(venues.map((v: Venue) => [v.id, v.name])), [venues]);

@@ -17,9 +17,9 @@ export default function AdminAuditTrailPage() {
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ['admin-audit-trail'],
     queryFn: () => api<AuditTrailEntry[]>('/api/admin/audit-trail'),
-    refetchOnWindowFocus: true,
-    refetchInterval: 15000,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60 * 1000
   });
 
   return (

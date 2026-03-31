@@ -45,9 +45,11 @@ export default function MyBookingsPage() {
     queryKey: ['my-bookings', user?.id],
     queryFn: () => api<Booking[]>(`/api/bookings?userId=${user?.id}`),
     enabled: !!user?.id,
-    refetchOnWindowFocus: true,
-    refetchInterval: user?.id ? 15000 : false,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: user?.id ? 60000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 30 * 1000
   });
   const { data: venues = [] } = useQuery({
     queryKey: ['venues'],

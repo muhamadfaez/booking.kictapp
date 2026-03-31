@@ -54,7 +54,10 @@ export default function AdminUsersPage() {
 
   const { data: signIns } = useQuery({
     queryKey: ['admin-signins-24h'],
-    queryFn: () => api<SignInSummary>('/api/admin/signins-24h')
+    queryFn: () => api<SignInSummary>('/api/admin/signins-24h'),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60 * 1000
   });
 
   const rows = useMemo(() => users.map((u) => ({

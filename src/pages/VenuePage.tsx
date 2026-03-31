@@ -21,17 +21,19 @@ export default function VenuePage() {
   const { data: venues = [], isLoading: venuesLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues'),
-    refetchOnWindowFocus: true,
-    refetchInterval: 15000,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 10 * 60 * 1000
   });
 
   const { data: occupancyBookings = [], isLoading: occupancyLoading } = useQuery({
     queryKey: ['venue-occupancy-calendar'],
     queryFn: () => api<Booking[]>('/api/bookings/occupancy'),
-    refetchInterval: 15000,
-    refetchIntervalInBackground: true,
-    staleTime: 5000
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
+    staleTime: 30 * 1000
   });
 
   useEffect(() => {

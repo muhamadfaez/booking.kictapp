@@ -29,9 +29,11 @@ export function useAppSettings() {
     queryKey: ['settings'],
     queryFn: () => api<AppSettings>('/api/settings'),
     initialData: readCachedSettings,
-    staleTime: 30 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-    refetchOnMount: false
+    staleTime: 6 * 60 * 60 * 1000,
+    gcTime: 12 * 60 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false
   });
 
   useEffect(() => {

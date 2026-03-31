@@ -30,9 +30,11 @@ export function DashboardHeader() {
     queryKey: ['notifications', user?.id, user?.role],
     queryFn: () => api<Notification[]>('/api/notifications'),
     enabled: !!user,
-    refetchOnWindowFocus: true,
-    refetchInterval: user ? 15000 : false,
-    staleTime: 0
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: user ? 60000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 30 * 1000
   });
   const unreadCount = notifications.filter((item) => !item.readAt).length;
 

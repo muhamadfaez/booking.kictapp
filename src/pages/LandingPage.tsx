@@ -150,7 +150,6 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    preloadRoute('/');
     preloadLandingOverlays();
     if (!user) return;
     preloadRoute(user.role === 'ADMIN' ? '/admin' : '/dashboard');
@@ -159,11 +158,11 @@ export default function LandingPage() {
   const { data: venues = [], isLoading } = useQuery({
     queryKey: ['venues'],
     queryFn: () => api<Venue[]>('/api/venues'),
-    staleTime: 0,
+    staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: 15000
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false
   });
 
   const { data: availability } = useQuery({
@@ -172,11 +171,11 @@ export default function LandingPage() {
       `/api/venues/availability?date=${encodeURIComponent(appliedFilter!.date)}&startTime=${encodeURIComponent(appliedFilter!.startTime)}&endTime=${encodeURIComponent(appliedFilter!.endTime)}`
     ),
     enabled: venues.length > 0 && !!appliedFilter && appliedFilter.startTime < appliedFilter.endTime,
-    staleTime: 0,
+    staleTime: 30 * 1000,
     gcTime: 10 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: 10000
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false
   });
 
   const availableSet = useMemo(() => new Set(availability?.availableVenueIds ?? []), [availability?.availableVenueIds]);

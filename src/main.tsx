@@ -36,6 +36,7 @@ const AdminUsersPage = lazy(() => import('@/pages/AdminUsersPage'));
 const AdminSettingsPage = lazy(() => import('@/pages/AdminSettingsPage'));
 const BookingHistoryPage = lazy(() => import('@/pages/BookingHistoryPage'));
 const AdminAuditTrailPage = lazy(() => import('@/pages/AdminAuditTrailPage'));
+const ManagerDashboardPage = lazy(() => import('@/pages/ManagerDashboardPage'));
 
 function withSuspense(element: React.ReactNode) {
   return <Suspense fallback={<RouteLoader />}>{element}</Suspense>;
@@ -84,6 +85,15 @@ const router = createBrowserRouter([
     element: withSuspense(
       <ProtectedRoute requiredRole="USER">
         <MyBookingsPage />
+      </ProtectedRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/manager",
+    element: withSuspense(
+      <ProtectedRoute requiredRole="USER">
+        <ManagerDashboardPage />
       </ProtectedRoute>
     ),
     errorElement: <RouteErrorBoundary />,

@@ -81,7 +81,7 @@ export class GoogleMailService {
         this.auth = new GoogleAuth(env);
     }
 
-    async sendEmail(to: string, subject: string, bodyObj: { text?: string; html?: string; }) {
+    async sendEmail(to: string, subject: string, bodyObj: { text?: string; html?: string; cc?: string | string[]; }) {
         const token = await this.auth.getAccessToken();
 
         // Construct raw email
@@ -92,8 +92,14 @@ export class GoogleMailService {
         // but for OTP a simple text/html body is often enough. 
         // We will use a simple Content-Type: text/html for now for simplicity.
 
+        const ccList = Array.isArray(bodyObj.cc)
+            ? bodyObj.cc
+            : bodyObj.cc
+                ? [bodyObj.cc]
+                : [];
         const messageParts = [
             `To: ${to}`,
+            ...(ccList.length > 0 ? [`Cc: ${ccList.join(', ')}`] : []),
             `Subject: ${utf8Subject}`,
             "MIME-Version: 1.0",
             "Content-Type: text/html; charset=utf-8",

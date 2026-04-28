@@ -24,6 +24,14 @@ export interface Venue {
   isAvailable?: boolean;
   unavailableReason?: string;
 }
+export type ManagerRole = 'CLASSROOM_LAB' | 'EVENT_VENUE' | 'MEETING_ROOM';
+export interface ManagerAssignment {
+  id: ManagerRole;
+  label: string;
+  userId: string;
+  venueIds: string[];
+  updatedAt: number;
+}
 export interface Booking {
   id: string;
   venueId: string;
@@ -38,6 +46,9 @@ export interface Booking {
   startTime?: string; // HH:mm
   endTime?: string; // HH:mm
   programType?: 'STUDENT' | 'STAFF' | 'GUEST';
+  rejectionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: number;
   documents?: {
     approvalLetterUrl?: string;
     approvalLetterDownloadUrl?: string;

@@ -13,7 +13,8 @@ import {
   User as UserIcon,
   Sparkles,
   ChevronRight,
-  CalendarDays
+  CalendarDays,
+  BriefcaseBusiness
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,8 +34,17 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import { getUserAvatarUrl } from "@/lib/avatar";
 import { SafeImage } from "@/components/ui/safe-image";
 import { preloadRoute } from "@/lib/route-preload";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api-client";
+import type { ManagerAssignment, Venue } from "@shared/types";
 
 const FALLBACK_APP_ICON = 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=300';
+type ManagerProfile = {
+  isManager: boolean;
+  assignments: ManagerAssignment[];
+  venues: Venue[];
+  venueIds: string[];
+};
 
 export function AppSidebar(): JSX.Element {
   const { user, logout } = useAuth();
@@ -42,12 +52,26 @@ export function AppSidebar(): JSX.Element {
   const isAdmin = user?.role === 'ADMIN';
   const { settings } = useAppSettings();
   const userAvatarUrl = getUserAvatarUrl(user);
+  const { data: managerProfile } = useQuery({
+    queryKey: ['manager-profile', user?.id],
+    queryFn: () => api<ManagerProfile>('/api/manager/profile'),
+    enabled: !!user,
+    staleTime: 60 * 1000
+  });
 
   React.useEffect(() => {
     preloadRoute('/');
     if (!user) return;
     preloadRoute(user.role === 'ADMIN' ? '/admin' : '/dashboard');
   }, [user]);
+
+  const userNavItems = [
+    { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+    { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
+    { title: "Venue", icon: Building2, href: "/venues" },
+    { title: "Live Site", icon: Globe, href: "/" },
+  ];
+  const managerNavItem = { title: "Venue Manager", icon: BriefcaseBusiness, href: "/manager" };
 
   const navItems = isAdmin ? [
     { title: "Admin Dashboard", icon: ShieldCheck, href: "/admin" },
@@ -57,12 +81,7 @@ export function AppSidebar(): JSX.Element {
     { title: "Booking History", icon: History, href: "/admin/history" },
     { title: "Audit Trail", icon: Activity, href: "/admin/audit" },
     { title: "Live Site", icon: Globe, href: "/" },
-  ] : [
-    { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { title: "My Bookings", icon: ClipboardList, href: "/bookings" },
-    { title: "Venue", icon: Building2, href: "/venues" },
-    { title: "Live Site", icon: Globe, href: "/" },
-  ];
+  ] : userNavItems;
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
@@ -121,6 +140,44 @@ export function AppSidebar(): JSX.Element {
             })}
           </SidebarMenu>
         </SidebarGroup>
+
+        {!isAdmin && managerProfile?.isManager && (
+          <>
+            <SidebarSeparator className="my-4" />
+            <SidebarGroup>
+              <SidebarMenu className="gap-1">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === managerNavItem.href}
+                    tooltip={managerNavItem.title}
+                    className={`
+                      relative h-11 rounded-xl transition-all duration-200
+                      ${location.pathname === managerNavItem.href
+                        ? 'bg-primary/10 text-primary font-semibold shadow-sm'
+                        : 'hover:bg-muted/80'
+                      }
+                    `}
+                  >
+                    <Link
+                      to={managerNavItem.href}
+                      className="flex items-center gap-3"
+                      onMouseEnter={() => preloadRoute(managerNavItem.href)}
+                      onFocus={() => preloadRoute(managerNavItem.href)}
+                      onPointerDown={() => preloadRoute(managerNavItem.href)}
+                    >
+                      <managerNavItem.icon className={`size-5 ${location.pathname === managerNavItem.href ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <span className="group-data-[collapsible=icon]:hidden">{managerNavItem.title}</span>
+                      {location.pathname === managerNavItem.href && (
+                        <ChevronRight className="ml-auto size-4 text-primary group-data-[collapsible=icon]:hidden" />
+                      )}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroup>
+          </>
+        )}
 
         {isAdmin && (
           <>

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
-import { UserEntity, VenueEntity, BookingEntity, NotificationEntity, AuditTrailEntity } from "./entities";
+import { UserEntity, VenueEntity, BookingEntity, NotificationEntity, AuditTrailEntity, ManagerAssignmentEntity } from "./entities";
 import { ok, bad, notFound, Index } from './core-utils';
-import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue, AuditTrailEntry, AuditAction } from "@shared/types";
+import type { Booking, SessionSlot, AppSettings, BookingStatus, Notification, NotificationType, User, Venue, AuditTrailEntry, AuditAction, ManagerAssignment, ManagerRole } from "@shared/types";
 import { verify } from 'hono/jwt';
 import { getRecentSignIns } from './signin-tracker';
 import { GoogleMailService, renderStandardEmail } from './mail';
@@ -59,6 +59,11 @@ const SETTINGS_CACHE_TTL_MS = 60 * 1000;
 const VENUES_CACHE_TTL_MS = 30 * 1000;
 const AVAILABILITY_CACHE_TTL_MS = 15 * 1000;
 const AVAILABILITY_CACHE_LIMIT = 100;
+const MANAGER_ROLE_LABELS: Record<ManagerRole, string> = {
+  CLASSROOM_LAB: 'Classroom & Lab Manager',
+  EVENT_VENUE: 'Event Venue Manager',
+  MEETING_ROOM: 'Meeting Room Manager'
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -314,6 +319,52 @@ async function listAdminUsers(env: Env): Promise<User[]> {
   return users.items.filter((user) => user.role === 'ADMIN');
 }
 
+async function listManagerAssignments(env: Env): Promise<ManagerAssignment[]> {
+  const existing = await ManagerAssignmentEntity.list(env);
+  const byId = new Map(existing.items.map((assignment) => [assignment.id, assignment]));
+  return (Object.entries(MANAGER_ROLE_LABELS) as Array<[ManagerRole, string]>).map(([id, label]) => ({
+    id,
+    label,
+    userId: byId.get(id)?.userId || '',
+    venueIds: byId.get(id)?.venueIds || [],
+    updatedAt: byId.get(id)?.updatedAt || 0
+  }));
+}
+
+async function listManagersForVenue(env: Env, venueId: string) {
+  const assignments = await listManagerAssignments(env);
+  const assigned = assignments.filter((item) => item.userId && item.venueIds.includes(venueId));
+  const matches = await Promise.all(assigned.map(async (assignment) => {
+    const user = new UserEntity(env, assignment.userId);
+    if (!await user.exists()) return null;
+    const manager = await user.getState();
+    if (!manager.email || !manager.email.includes('@')) return null;
+    return { assignment, manager };
+  }));
+
+  return matches.filter((match): match is { assignment: ManagerAssignment; manager: User } => match !== null);
+}
+
+async function getManagerVenueIds(env: Env, userId: string) {
+  const assignments = await listManagerAssignments(env);
+  return Array.from(new Set(assignments
+    .filter((assignment) => assignment.userId === userId)
+    .flatMap((assignment) => assignment.venueIds)));
+}
+
+async function getManagerProfile(env: Env, userId: string) {
+  const assignments = (await listManagerAssignments(env)).filter((assignment) => assignment.userId === userId);
+  const venueIds = Array.from(new Set(assignments.flatMap((assignment) => assignment.venueIds)));
+  await VenueEntity.ensureSeed(env);
+  const venues = await VenueEntity.list(env);
+  return {
+    isManager: assignments.length > 0 && venueIds.length > 0,
+    assignments,
+    venues: venues.items.filter((venue) => venueIds.includes(venue.id)),
+    venueIds
+  };
+}
+
 const normalizeLoose = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
 async function resolveBookingRequesterEmail(env: Env, booking: Booking, requester?: User) {
@@ -407,7 +458,7 @@ async function syncRequesterProfile(env: Env, requester: User) {
   });
 }
 
-async function sendEmailSafe(env: Env, to: string, subject: string, html: string) {
+async function sendEmailSafe(env: Env, to: string, subject: string, html: string, cc?: string[]) {
   if (!to || !to.includes('@')) {
     console.error('[MAIL] Missing recipient email', { to, subject });
     return { ok: false as const, error: 'Missing recipient email' };
@@ -415,7 +466,7 @@ async function sendEmailSafe(env: Env, to: string, subject: string, html: string
 
   try {
     const mailer = new GoogleMailService(env);
-    await mailer.sendEmail(to, subject, { html });
+    await mailer.sendEmail(to, subject, { html, cc });
     console.log('[MAIL] Sent', { to, subject });
     return { ok: true as const };
   } catch (error) {
@@ -426,7 +477,7 @@ async function sendEmailSafe(env: Env, to: string, subject: string, html: string
     });
     try {
       const mailer = new GoogleMailService(env);
-      await mailer.sendEmail(to, subject, { html });
+      await mailer.sendEmail(to, subject, { html, cc });
       console.log('[MAIL] Sent on retry', { to, subject });
       return { ok: true as const };
     } catch (retryError) {
@@ -469,6 +520,8 @@ async function createAdminNotifications(
 
 async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User, venue: Venue) {
   const admins = await listAdminUsers(env);
+  const adminEmails = admins.map((admin) => admin.email).filter((email) => email && email.includes('@'));
+  const managerMatches = await listManagersForVenue(env, booking.venueId);
   if (admins.length === 0) {
     console.warn('[BOOKING] No admins available for booking notification', {
       bookingId: booking.id,
@@ -492,8 +545,8 @@ async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User
   });
 
   await Promise.all(
-    admins.map(async (admin) => {
-      await createNotification(env, {
+    admins.map((admin) =>
+      createNotification(env, {
         userId: admin.id,
         audienceRole: 'ADMIN',
         type: 'BOOKING_CREATED',
@@ -502,13 +555,89 @@ async function sendAdminBookingEmail(env: Env, booking: Booking, requester: User
         bookingId: booking.id,
         venueId: booking.venueId,
         link: '/admin'
-      });
+      })
+    )
+  );
+
+  if (managerMatches.length > 0) {
+    await Promise.all(managerMatches.map(async ({ manager }) => {
+      if (manager.role !== 'ADMIN') {
+        await createNotification(env, {
+          userId: manager.id,
+          audienceRole: 'USER',
+          type: 'BOOKING_CREATED',
+          title: 'New booking request',
+          message: `${requester.name || booking.userName} requested ${venue.name} for ${formatBookingWindow(booking)}.`,
+          bookingId: booking.id,
+          venueId: booking.venueId,
+          link: '/bookings'
+        });
+      }
+      await sendEmailSafe(
+        env,
+        manager.email,
+        subject,
+        html,
+        adminEmails.filter((email) => email.toLowerCase() !== manager.email.toLowerCase())
+      );
+    }));
+    return;
+  }
+
+  await Promise.all(
+    admins.map(async (admin) => {
       await sendEmailSafe(env, admin.email, subject, html);
     })
   );
 }
 
-async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: User, venue: Venue, status: 'APPROVED' | 'REJECTED') {
+async function sendBookingApprovedReceiptToAdmins(env: Env, booking: Booking, requester: User, venue: Venue) {
+  const admins = await listAdminUsers(env);
+  const adminEmails = Array.from(new Set(admins
+    .map((admin) => admin.email)
+    .filter((email) => email && email.includes('@'))));
+
+  if (adminEmails.length === 0) {
+    console.warn('[BOOKING] No admins available for approval receipt', {
+      bookingId: booking.id,
+      venueId: booking.venueId
+    });
+    return;
+  }
+
+  const managerEmails = Array.from(new Set((await listManagersForVenue(env, booking.venueId))
+    .map(({ manager }) => manager.email)
+    .filter((email) => email && email.includes('@'))))
+    .filter((email) => !adminEmails.some((adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()));
+
+  const subject = `Booking Approved Receipt - ${venue.name}`;
+  const html = renderStandardEmail({
+    eyebrow: 'Booking Approved Receipt',
+    title: venue.name,
+    intro: `${requester.name || booking.userName} has an approved booking for ${venue.name}.`,
+    accent: '#0f8f6f',
+    sections: [
+      { label: 'Requester', value: `${requester.name || booking.userName}${requester.email ? ` (${requester.email})` : ''}` },
+      { label: 'Venue', value: venue.name },
+      { label: 'Approved Date', value: booking.date },
+      { label: 'Time Slot', value: booking.startTime && booking.endTime ? `${booking.startTime} - ${booking.endTime}` : booking.session?.replace('_', ' ') || 'N/A' },
+      { label: 'Notes', value: booking.purpose || 'N/A' },
+      { label: 'Status', value: 'APPROVED' }
+    ],
+    footer: 'This receipt was generated automatically after booking approval.'
+  });
+
+  await sendEmailSafe(env, adminEmails.join(', '), subject, html, managerEmails);
+}
+
+async function sendRequesterStatusUpdate(
+  env: Env,
+  booking: Booking,
+  requester: User,
+  venue: Venue,
+  status: 'APPROVED' | 'REJECTED',
+  options?: { rejectionReason?: string; ccAdmin?: boolean }
+) {
   const resolvedRecipient = await resolveBookingRequesterEmail(env, booking, requester);
   const recipientEmail = resolvedRecipient.email;
   const recipientName = resolvedRecipient.name;
@@ -527,6 +656,7 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
       { label: 'Venue', value: venue.name },
       { label: 'Schedule', value: formatBookingWindow(booking) },
       { label: 'Purpose', value: booking.purpose },
+      ...(options?.rejectionReason ? [{ label: 'Reason', value: options.rejectionReason }] : []),
       { label: 'Status', value: status }
     ],
     footer: status === 'APPROVED'
@@ -554,7 +684,11 @@ async function sendRequesterStatusUpdate(env: Env, booking: Booking, requester: 
     link: '/admin/history'
   });
 
-  const emailResult = await sendEmailSafe(env, recipientEmail, subject, html);
+  const adminEmails = options?.ccAdmin ? (await listAdminUsers(env)).map((admin) => admin.email).filter((email) => email && email.includes('@')) : [];
+  const emailResult = await sendEmailSafe(env, recipientEmail, subject, html, adminEmails);
+  if (status === 'APPROVED') {
+    await sendBookingApprovedReceiptToAdmins(env, booking, requester, venue);
+  }
   console.log('[BOOKING] Status update processed', {
     bookingId: booking.id,
     status,
@@ -1073,6 +1207,169 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
     });
   });
 
+  app.get('/api/admin/manager-assignments', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    return ok(c, await listManagerAssignments(c.env));
+  });
+
+  app.put('/api/admin/manager-assignments/:id', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    const id = c.req.param('id') as ManagerRole;
+    const label = MANAGER_ROLE_LABELS[id];
+    if (!label) return notFound(c, 'Manager role not found');
+
+    const body = await c.req.json() as { userId?: string; venueIds?: string[] };
+    const userId = String(body.userId || '').trim();
+    const venueIds = Array.from(new Set((body.venueIds || []).map((venueId) => String(venueId).trim()).filter(Boolean)));
+
+    if (userId) {
+      const user = new UserEntity(c.env, userId);
+      if (!await user.exists()) return bad(c, 'Assigned user does not exist');
+    }
+
+    if (venueIds.length > 0) {
+      await VenueEntity.ensureSeed(c.env);
+      const venues = await VenueEntity.list(c.env);
+      const validVenueIds = new Set(venues.items.map((venue) => venue.id));
+      const invalidVenueId = venueIds.find((venueId) => !validVenueIds.has(venueId));
+      if (invalidVenueId) return bad(c, `Unknown venue: ${invalidVenueId}`);
+    }
+
+    const assignment: ManagerAssignment = {
+      id,
+      label,
+      userId,
+      venueIds,
+      updatedAt: Date.now()
+    };
+    await ManagerAssignmentEntity.create(c.env, assignment);
+    await logAuditFromContext(c, 'SETTINGS_UPDATED', `Updated ${label}`, 'SETTINGS', id, {
+      userId,
+      venueCount: venueIds.length
+    });
+    return ok(c, assignment);
+  });
+
+  app.get('/api/admin/backup', verifyAuthStrict, verifyAdminStrict, async (c) => {
+    await Promise.all([
+      UserEntity.ensureSeed(c.env),
+      VenueEntity.ensureSeed(c.env),
+      BookingEntity.ensureSeed(c.env)
+    ]);
+
+    const [users, venues, bookings, managerAssignments, auditTrail] = await Promise.all([
+      UserEntity.list(c.env),
+      VenueEntity.list(c.env),
+      BookingEntity.list(c.env),
+      listManagerAssignments(c.env),
+      readStream<AuditTrailEntry>(c.env, AUDIT_STREAM_KEY)
+    ]);
+    const roles = [
+      ...users.items.map((user) => ({
+        id: `system:${user.id}`,
+        userId: user.id,
+        email: user.email,
+        roleType: 'SYSTEM',
+        role: user.role
+      })),
+      ...managerAssignments
+        .filter((assignment) => assignment.userId)
+        .map((assignment) => ({
+          id: `manager:${assignment.id}`,
+          userId: assignment.userId,
+          email: users.items.find((user) => user.id === assignment.userId)?.email || '',
+          roleType: 'MANAGER',
+          role: assignment.label
+        }))
+    ];
+
+    return ok(c, {
+      exportedAt: new Date().toISOString(),
+      users: users.items,
+      venues: venues.items,
+      bookings: bookings.items,
+      managerAssignments,
+      roles,
+      auditTrail
+    });
+  });
+
+  app.get('/api/manager/profile', verifyAuthStrict, async (c) => {
+    const user = c.get('user');
+    return ok(c, await getManagerProfile(c.env, user.sub));
+  });
+
+  app.get('/api/manager/bookings', verifyAuthStrict, async (c) => {
+    const user = c.get('user');
+    const venueIds = await getManagerVenueIds(c.env, user.sub);
+    if (venueIds.length === 0) {
+      return ok(c, []);
+    }
+
+    await BookingEntity.ensureSeed(c.env);
+    const bookings = await BookingEntity.list(c.env);
+    return ok(c, bookings.items.filter((booking) => venueIds.includes(booking.venueId) && booking.status !== 'CANCELLED'));
+  });
+
+  app.post('/api/manager/bookings/:id/status', verifyAuthStrict, async (c) => {
+    const user = c.get('user');
+    const id = c.req.param('id');
+    const body = await c.req.json() as { status?: string; rejectionReason?: string };
+    const status = body.status === 'APPROVED' || body.status === 'REJECTED' ? body.status : null;
+    if (!status) return bad(c, 'Status must be APPROVED or REJECTED');
+
+    const booking = new BookingEntity(c.env, id);
+    if (!await booking.exists()) return notFound(c, 'Booking not found');
+    const currentBooking = await booking.getState();
+    const venueIds = await getManagerVenueIds(c.env, user.sub);
+    if (!venueIds.includes(currentBooking.venueId)) {
+      return c.json({ success: false, error: 'Forbidden: Booking is outside your assigned venues' }, 403);
+    }
+    if (currentBooking.status !== 'PENDING') {
+      return bad(c, 'Only pending bookings can be approved or rejected');
+    }
+
+    const rejectionReason = status === 'REJECTED' ? String(body.rejectionReason || '').trim() : '';
+    const requesterState = await new UserEntity(c.env, currentBooking.userId).getState();
+    const requester: User = {
+      id: requesterState.id || currentBooking.userId,
+      email: requesterState.email || currentBooking.userEmail || '',
+      name: requesterState.name || currentBooking.userName || 'Requester',
+      role: requesterState.role || 'USER',
+      avatar: requesterState.avatar
+    };
+    const venue = await new VenueEntity(c.env, currentBooking.venueId).getState();
+    const resolvedRecipient = await resolveBookingRequesterEmail(c.env, currentBooking, requester);
+    if (resolvedRecipient.email && resolvedRecipient.email !== currentBooking.userEmail) {
+      await booking.patch({ userEmail: resolvedRecipient.email });
+      currentBooking.userEmail = resolvedRecipient.email;
+    }
+
+    await booking.patch({
+      status,
+      rejectionReason: rejectionReason || undefined,
+      reviewedBy: user.sub,
+      reviewedAt: Date.now()
+    });
+    const updatedBooking = await booking.getState();
+    await sendRequesterStatusUpdate(c.env, updatedBooking, requester, venue, status, {
+      rejectionReason,
+      ccAdmin: true
+    });
+    await logAuditFromContext(
+      c,
+      status === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_REJECTED',
+      `Manager ${status} booking ${updatedBooking.id} for ${venue.name}`,
+      'BOOKING',
+      updatedBooking.id,
+      {
+        venueId: updatedBooking.venueId,
+        userId: updatedBooking.userId,
+        managerId: user.sub
+      }
+    );
+
+    return ok(c, updatedBooking);
+  });
+
   app.get('/api/admin/audit-trail', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const items = (await readStream<AuditTrailEntry>(c.env, AUDIT_STREAM_KEY))
       .filter((entry) => entry.targetType !== 'AUTH')
@@ -1285,7 +1582,10 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
 
   app.post('/api/bookings/:id/status', verifyAuthStrict, verifyAdminStrict, async (c) => {
     const id = c.req.param('id');
-    const { status } = await c.req.json() as { status: string };
+    const { status, rejectionReason } = await c.req.json() as { status: string; rejectionReason?: string };
+    if (status !== 'APPROVED' && status !== 'REJECTED') {
+      return bad(c, 'Status must be APPROVED or REJECTED');
+    }
     const booking = new BookingEntity(c.env, id);
     if (!await booking.exists()) return notFound(c, 'Booking not found');
     const currentBooking = await booking.getState();
@@ -1334,11 +1634,18 @@ export function userRoutes(app: Hono<{ Bindings: Env, Variables: { user: any } }
       }
     }
 
-    await booking.patch({ status: status as any });
+    await booking.patch({
+      status,
+      rejectionReason: status === 'REJECTED' ? String(rejectionReason || '').trim() || undefined : undefined,
+      reviewedBy: c.get('user')?.sub,
+      reviewedAt: Date.now()
+    });
     const updatedBooking = await booking.getState();
 
     if (status === 'APPROVED' || status === 'REJECTED') {
-      await sendRequesterStatusUpdate(c.env, updatedBooking, requester, venue, status);
+      await sendRequesterStatusUpdate(c.env, updatedBooking, requester, venue, status, {
+        rejectionReason: status === 'REJECTED' ? String(rejectionReason || '').trim() : undefined
+      });
     }
     await logAuditFromContext(
       c,

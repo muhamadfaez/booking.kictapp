@@ -41,6 +41,7 @@ export function DashboardHeader() {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/dashboard') return 'Dashboard';
+    if (path === '/manager') return 'Venue Manager';
     if (path === '/venues') return 'Venue';
     if (path === '/bookings') return 'My Bookings';
     if (path === '/admin') return 'Admin Dashboard';

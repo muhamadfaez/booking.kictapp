@@ -3,6 +3,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/dashboard': () => import('@/pages/DashboardPage'),
   '/admin': () => import('@/pages/AdminPage'),
   '/admin/audit': () => import('@/pages/AdminAuditTrailPage'),
+  '/manager': () => import('@/pages/ManagerDashboardPage'),
   '/bookings': () => import('@/pages/MyBookingsPage'),
   '/venues': () => import('@/pages/VenuePage'),
 };

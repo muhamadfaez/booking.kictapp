@@ -122,7 +122,7 @@ export function VenueCard({ venue, onBook, disabled = false, disabledReason }: V
           className="w-full h-11 rounded-xl border-2 hover:border-primary hover:bg-primary/5 font-semibold transition-all duration-300 group/btn"
           disabled={disabled}
         >
-          <span>{disabled ? 'Unavailable' : 'Reserve Now'}</span>
+          <span>{disabled ? 'Unavailable' : 'Book Now'}</span>
           {!disabled && <ArrowRight className="ml-2 w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />}
         </Button>
       </CardFooter>

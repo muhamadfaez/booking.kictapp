@@ -1,18 +1,30 @@
-import React, { useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
-import { format, isSameDay } from "date-fns";
-import type { Venue, SessionSlot } from "@shared/types";
+import {
+  addDays,
+  addMonths,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isBefore,
+  isSameMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subMonths
+} from "date-fns";
+import type { Booking, Venue } from "@shared/types";
 import { api } from "@/lib/api-client";
 import { useAuth } from '@/hooks/useAuth';
-import { ArrowRight, CheckCircle2, Loader2, UploadCloud, File as FileIcon, FileText } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Loader2, UploadCloud, File as FileIcon, FileText } from 'lucide-react';
+import { cn } from "@/lib/utils";
 
 interface BookingWizardProps {
   venue: Venue | null;
@@ -28,12 +40,204 @@ type AvailabilityResult = {
   unavailableVenueIds: string[];
 };
 
-const sessionOptions = [
-  { value: 'MORNING', label: 'Morning', time: '08:00 - 12:00' },
-  { value: 'AFTERNOON', label: 'Afternoon', time: '13:00 - 17:00' },
-  { value: 'EVENING', label: 'Evening', time: '18:00 - 22:00' },
-  { value: 'FULL_DAY', label: 'Full Day', time: '08:00 - 22:00' },
-];
+const dateKey = (date: Date) => format(startOfDay(date), 'yyyy-MM-dd');
+
+const dateRange = (start: Date, end: Date) => {
+  const first = startOfDay(start);
+  const last = startOfDay(end);
+  const direction = first <= last ? 1 : -1;
+  const dates: Date[] = [];
+  let cursor = first;
+
+  while (direction === 1 ? cursor <= last : cursor >= last) {
+    dates.push(cursor);
+    cursor = addDays(cursor, direction);
+  }
+
+  return dates;
+};
+
+function FormField({
+  label,
+  children
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2 text-left">
+      <Label className="block text-sm font-semibold text-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function MultiDateBookingCalendar({
+  selectedDates,
+  onChange,
+  isDateDisabled,
+  isDateBooked,
+  today
+}: {
+  selectedDates: Date[];
+  onChange: (dates: Date[]) => void;
+  isDateDisabled: (date: Date) => boolean;
+  isDateBooked: (date: Date) => boolean;
+  today: Date;
+}) {
+  const [visibleMonth, setVisibleMonth] = useState(startOfMonth(today));
+  const [dragStart, setDragStart] = useState<Date | null>(null);
+  const [dragPreviewKeys, setDragPreviewKeys] = useState<Set<string>>(new Set());
+  const [didDrag, setDidDrag] = useState(false);
+
+  const monthStart = startOfMonth(visibleMonth);
+  const calendarStart = startOfWeek(monthStart);
+  const calendarEnd = endOfWeek(endOfMonth(visibleMonth));
+  const days = dateRange(calendarStart, calendarEnd);
+  const selectedKeySet = useMemo(() => new Set(selectedDates.map(dateKey)), [selectedDates]);
+  const highlightedKeys = dragStart
+    ? new Set([...selectedKeySet, ...dragPreviewKeys])
+    : selectedKeySet;
+
+  const availableRangeKeys = (start: Date, end: Date) => {
+    return new Set(dateRange(start, end).filter((date) => !isDateDisabled(date)).map(dateKey));
+  };
+
+  const updateDragPreview = (target: Date) => {
+    if (!dragStart || isDateDisabled(target)) return;
+    setDidDrag((current) => current || dateKey(target) !== dateKey(dragStart));
+    setDragPreviewKeys(availableRangeKeys(dragStart, target));
+  };
+
+  const commitRange = () => {
+    if (!dragStart) return;
+    if (!didDrag) {
+      const key = dateKey(dragStart);
+      const next = selectedKeySet.has(key)
+        ? selectedDates.filter((date) => dateKey(date) !== key)
+        : [...selectedDates, dragStart];
+      onChange(next.sort((a, b) => a.getTime() - b.getTime()));
+    } else {
+      const merged = new Map<string, Date>();
+      selectedDates.forEach((date) => merged.set(dateKey(date), date));
+      dragPreviewKeys.forEach((key) => merged.set(key, startOfDay(new Date(`${key}T00:00:00`))));
+      onChange(Array.from(merged.values()).sort((a, b) => a.getTime() - b.getTime()));
+    }
+
+    setDragStart(null);
+    setDragPreviewKeys(new Set());
+    setDidDrag(false);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-calendar-date]');
+    const key = target?.dataset.calendarDate;
+    if (!key) return;
+    updateDragPreview(startOfDay(new Date(`${key}T00:00:00`)));
+  };
+
+  useEffect(() => {
+    if (!dragStart) return;
+    const stopDrag = () => commitRange();
+    window.addEventListener('pointerup', stopDrag);
+    window.addEventListener('pointercancel', stopDrag);
+    return () => {
+      window.removeEventListener('pointerup', stopDrag);
+      window.removeEventListener('pointercancel', stopDrag);
+    };
+  });
+
+  return (
+    <div className="rounded-2xl border border-border bg-background p-3 shadow-sm sm:p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-10 rounded-xl"
+          onClick={() => setVisibleMonth((current) => subMonths(current, 1))}
+          disabled={isBefore(endOfMonth(subMonths(visibleMonth, 1)), today)}
+          aria-label="Previous month"
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <div className="text-sm font-semibold">{format(visibleMonth, 'MMMM yyyy')}</div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-10 rounded-xl"
+          onClick={() => setVisibleMonth((current) => addMonths(current, 1))}
+          aria-label="Next month"
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          <div key={day} className="py-2">{day}</div>
+        ))}
+      </div>
+
+      <div
+        className="grid touch-none select-none grid-cols-7 gap-y-1"
+        onPointerMove={handlePointerMove}
+      >
+        {days.map((day) => {
+          const key = dateKey(day);
+          const selected = highlightedKeys.has(key);
+          const booked = isDateBooked(day);
+          const disabled = isDateDisabled(day);
+          const inMonth = isSameMonth(day, visibleMonth);
+          const previousDay = addDays(day, -1);
+          const nextDay = addDays(day, 1);
+          const connectsLeft = selected && highlightedKeys.has(dateKey(previousDay)) && previousDay.getDay() !== 6;
+          const connectsRight = selected && highlightedKeys.has(dateKey(nextDay)) && day.getDay() !== 6;
+
+          return (
+            <button
+              key={key}
+              type="button"
+              data-calendar-date={key}
+              disabled={disabled}
+              onPointerDown={(event) => {
+                if (disabled) return;
+                event.preventDefault();
+                setDragStart(startOfDay(day));
+                setDragPreviewKeys(new Set([key]));
+                setDidDrag(false);
+              }}
+              onPointerEnter={() => updateDragPreview(day)}
+              className={cn(
+                "relative flex h-11 min-h-11 items-center justify-center text-sm transition-colors outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring sm:h-12 sm:min-h-12",
+                selected && "bg-primary/15 text-primary",
+                selected && !connectsLeft && "rounded-l-full",
+                selected && !connectsRight && "rounded-r-full",
+                !selected && "rounded-xl hover:bg-muted",
+                !inMonth && "text-muted-foreground/40",
+                booked && "bg-red-50 text-red-700 line-through opacity-100 hover:bg-red-50 dark:bg-red-950/40 dark:text-red-300",
+                disabled && !booked && "cursor-not-allowed text-muted-foreground/40 opacity-60",
+                disabled && "pointer-events-auto"
+              )}
+            >
+              <span
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-full",
+                  selected && "bg-primary text-primary-foreground shadow-sm",
+                  booked && "bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-200"
+                )}
+              >
+                {format(day, 'd')}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWizardProps) {
   const { user } = useAuth();
@@ -42,6 +246,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const [selectedDates, setSelectedDates] = useState<Date[]>([new Date()]);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('10:00');
+  const [phone, setPhone] = useState('');
   const [purpose, setPurpose] = useState('');
 
   // New State
@@ -50,12 +255,72 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
   const [approvalFile, setApprovalFile] = useState<File | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dialogTopOffset, setDialogTopOffset] = useState(64);
+
+  const today = useMemo(() => startOfDay(new Date()), []);
+
+  const { data: occupancyBookings = [], isFetching: isFetchingBookings } = useQuery({
+    queryKey: ['bookings-occupancy', venue?.id],
+    queryFn: () => api<Booking[]>('/api/bookings/occupancy'),
+    enabled: isOpen && !!venue && !!user,
+    refetchInterval: isOpen ? 30000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 10 * 1000
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const updateDialogOffset = () => {
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>('nav, header'));
+      const topBars = candidates
+        .map((element) => {
+          const styles = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return { element, styles, rect };
+        })
+        .filter(({ styles, rect }) => {
+          const isPinned = styles.position === 'fixed' || styles.position === 'sticky';
+          return isPinned && Math.abs(rect.top) <= 2 && rect.height > 0;
+        });
+
+      const offset = topBars.reduce((max, { rect }) => Math.max(max, rect.bottom), 64);
+      setDialogTopOffset(Math.ceil(offset));
+    };
+
+    updateDialogOffset();
+    window.addEventListener('resize', updateDialogOffset);
+    window.addEventListener('scroll', updateDialogOffset, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', updateDialogOffset);
+      window.removeEventListener('scroll', updateDialogOffset);
+    };
+  }, [isOpen]);
 
   const orderedDates = useMemo(
     () => [...selectedDates].sort((a, b) => a.getTime() - b.getTime()),
     [selectedDates]
   );
   const primaryDate = orderedDates[0];
+
+  const bookedDateKeys = useMemo(() => {
+    if (!venue) return new Set<string>();
+    return new Set(
+      occupancyBookings
+        .filter((booking) => booking.venueId === venue.id)
+        .map((booking) => booking.date)
+    );
+  }, [occupancyBookings, venue]);
+
+  const isBookedDate = (date: Date) => bookedDateKeys.has(format(date, 'yyyy-MM-dd'));
+  const isPastDate = (date: Date) => isBefore(startOfDay(date), today);
+
+  useEffect(() => {
+    if (bookedDateKeys.size === 0) return;
+    setSelectedDates((current) => current.filter((date) => !bookedDateKeys.has(format(date, 'yyyy-MM-dd'))));
+  }, [bookedDateKeys]);
 
   if (!venue) return null;
 
@@ -154,6 +419,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
           startTime,
           endTime,
           purpose,
+          requesterPhone: phone,
           programType,
           requesterEmail,
           requesterName,
@@ -169,6 +435,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
         queryClient.invalidateQueries({ queryKey: ['my-bookings'] }),
         queryClient.invalidateQueries({ queryKey: ['all-bookings'] }),
         queryClient.invalidateQueries({ queryKey: ['bookings-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookings-occupancy'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard-venues-availability'] }),
         queryClient.invalidateQueries({ queryKey: ['venues-availability'] }),
         queryClient.invalidateQueries({ queryKey: ['notifications'] })
@@ -192,6 +459,7 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
     setSelectedDates([new Date()]);
     setStartTime('08:00');
     setEndTime('10:00');
+    setPhone('');
     setPurpose('');
     setProgramType('STUDENT');
     setProposalFile(null);
@@ -249,7 +517,13 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[96vw] max-h-[90vh] gap-0 overflow-y-auto rounded-[2rem] p-0 transition-all duration-300 sm:max-w-[600px] md:max-w-[700px]">
+      <DialogContent
+        style={{
+          '--booking-dialog-top': `${dialogTopOffset}px`,
+          '--booking-dialog-max-height': `calc(100vh - ${dialogTopOffset}px - 16px)`
+        } as React.CSSProperties}
+        className="left-1/2 top-[var(--booking-dialog-top)] z-[120] w-[calc(100vw-1rem)] max-h-[var(--booking-dialog-max-height)] translate-y-0 gap-0 overflow-y-auto rounded-2xl p-0 transition-all duration-300 sm:w-[96vw] sm:max-w-[600px] sm:rounded-[2rem] md:max-w-[760px]"
+      >
         <div className="bg-gradient-subtle p-5 border-b border-border/50 text-center sm:text-left">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{venue.name}</DialogTitle>
@@ -270,81 +544,111 @@ export function BookingWizard({ venue, isOpen, onClose, onSuccess }: BookingWiza
 
         <div className="p-4 sm:p-6">
           {step === 'DETAILS' && (
-            <div className="grid gap-5 md:grid-cols-2 md:gap-6 animate-fade-in">
-              <div className="mx-auto w-full max-w-[340px] space-y-4 text-center md:mx-0 md:max-w-none md:text-left">
-                <Label className="inline-block">Date</Label>
-                <div className="overflow-x-auto border rounded-xl p-2 sm:p-3 flex justify-center">
-                  <Calendar
-                    mode="multiple"
-                    selected={orderedDates}
-                    onSelect={(value) => setSelectedDates(value ?? [])}
-                    className="rounded-md min-w-[280px]"
-                    disabled={(d) => d < new Date()}
-                  />
+            <div className="mx-auto w-full max-w-2xl space-y-5 text-left animate-fade-in">
+              <FormField label="Requester Name">
+                <Input
+                  value={user?.name || ''}
+                  readOnly
+                  className="h-11 w-full rounded-xl bg-muted/40 px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Email">
+                <Input
+                  value={user?.email || localStorage.getItem('nexus_user_email') || ''}
+                  readOnly
+                  className="h-11 w-full rounded-xl bg-muted/40 px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Phone">
+                <Input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Contact number"
+                  className="h-11 w-full rounded-xl px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Venue">
+                <Input
+                  value={venue.name}
+                  readOnly
+                  className="h-11 w-full rounded-xl bg-muted/40 px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Date">
+                <MultiDateBookingCalendar
+                  selectedDates={orderedDates}
+                  onChange={setSelectedDates}
+                  isDateDisabled={(date) => isPastDate(date) || isBookedDate(date)}
+                  isDateBooked={isBookedDate}
+                  today={today}
+                />
+                <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-medium text-muted-foreground md:justify-start">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-full bg-red-500" />
+                    Booked
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-full bg-emerald-500" />
+                    Available
+                  </span>
+                  {isFetchingBookings ? <span>Refreshing availability...</span> : null}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    {orderedDates.length} date{orderedDates.length > 1 ? 's' : ''} selected
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2 md:justify-start">
-                    {orderedDates.map((value) => (
-                      <Button
-                        key={value.toISOString()}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-full"
-                        onClick={() => setSelectedDates((current) => current.filter((item) => !isSameDay(item, value)))}
-                      >
-                        {format(value, 'dd MMM')}
-                      </Button>
-                    ))}
+                <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">Selected: </span>
+                  {orderedDates.length > 0
+                    ? orderedDates.map((value) => format(value, 'd MMM yyyy')).join(', ')
+                    : 'No dates selected'}
+                </div>
+              </FormField>
+
+              <FormField label="Start Time">
+                <Input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="h-11 w-full rounded-xl px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="End Time">
+                <Input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="h-11 w-full rounded-xl px-4 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Notes / Purpose">
+                <Textarea
+                  value={purpose}
+                  onChange={e => setPurpose(e.target.value)}
+                  placeholder="Event name, purpose, or setup notes"
+                  className="min-h-24 w-full resize-y rounded-xl px-4 py-3 text-sm focus-visible:ring-2"
+                />
+              </FormField>
+
+              <FormField label="Program Type">
+                <RadioGroup value={programType} onValueChange={(v) => setProgramType(v as ProgramType)} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="flex h-11 items-center gap-3 rounded-xl border border-input px-4">
+                    <RadioGroupItem value="STUDENT" id="r1" />
+                    <Label htmlFor="r1" className="text-sm font-medium">Student</Label>
                   </div>
-                </div>
-              </div>
-              <div className="mx-auto w-full max-w-[340px] min-w-0 space-y-5 text-center md:mx-0 md:max-w-none md:text-left">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="min-w-0 space-y-2">
-                    <Label className="inline-block">Start Time</Label>
-                    <Input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      className="h-11 w-full min-w-0 max-w-full text-sm sm:text-base"
-                    />
+                  <div className="flex h-11 items-center gap-3 rounded-xl border border-input px-4">
+                    <RadioGroupItem value="STAFF" id="r2" />
+                    <Label htmlFor="r2" className="text-sm font-medium">Staff</Label>
                   </div>
-                  <div className="min-w-0 space-y-2">
-                    <Label className="inline-block">End Time</Label>
-                    <Input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="h-11 w-full min-w-0 max-w-full text-sm sm:text-base"
-                    />
+                  <div className="flex h-11 items-center gap-3 rounded-xl border border-input px-4">
+                    <RadioGroupItem value="GUEST" id="r3" />
+                    <Label htmlFor="r3" className="text-sm font-medium">Guest</Label>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="inline-block">Purpose</Label>
-                  <Input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Event Name" className="h-11" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="inline-block">Program Type</Label>
-                  <RadioGroup value={programType} onValueChange={(v) => setProgramType(v as ProgramType)} className="grid grid-cols-1 gap-3 text-center sm:grid-cols-3 sm:text-left">
-                    <div className="flex items-center justify-center space-x-2 sm:justify-start">
-                      <RadioGroupItem value="STUDENT" id="r1" />
-                      <Label htmlFor="r1">Student</Label>
-                    </div>
-                    <div className="flex items-center justify-center space-x-2 sm:justify-start">
-                      <RadioGroupItem value="STAFF" id="r2" />
-                      <Label htmlFor="r2">Staff</Label>
-                    </div>
-                    <div className="flex items-center justify-center space-x-2 sm:justify-start">
-                      <RadioGroupItem value="GUEST" id="r3" />
-                      <Label htmlFor="r3">Guest</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-              </div>
+                </RadioGroup>
+              </FormField>
             </div>
           )}
 
